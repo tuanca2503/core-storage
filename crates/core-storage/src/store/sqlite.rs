@@ -20,7 +20,7 @@ impl Sqlite {
         Ok(())
     }
     pub fn create(conn: &Connection) -> rusqlite::Result<()> {
-        disks::Disks::create_table(conn);
+        disks::Disks::sql_create(conn);
         segments::Segments::create_table(conn);
 
         Ok(())

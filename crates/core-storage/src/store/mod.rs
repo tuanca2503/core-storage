@@ -1,6 +1,8 @@
-mod models;
+pub mod models;
 
 pub mod config;
 pub mod json;
 pub mod sqlite;
+pub mod file;
+
 
