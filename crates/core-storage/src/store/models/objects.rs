@@ -1,9 +1,40 @@
 use rusqlite::Connection;
+pub enum ObjectStatus {
+    Pending,
+    Committed,
+    Deleted,
+}
 
-pub struct Objects {}
+impl ObjectStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ObjectStatus::Pending => "pending",
+            ObjectStatus::Committed => "committed",
+            ObjectStatus::Deleted => "deleted",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "pending" => Some(ObjectStatus::Pending),
+            "committed" => Some(ObjectStatus::Committed),
+            "deleted" => Some(ObjectStatus::Deleted),
+            _ => None,
+        }
+    }
+}
+pub struct Objects {
+    pub object_id: i64,
+    pub external_id: Option<String>,   // id do tầng app đặt, nullable
+    pub total_size: i64,
+    pub chunk_count: i64,
+    pub status: ObjectStatus,
+    pub created_at: i64,               // unix timestamp
+    pub updated_at: i64,               // unix timestamp
+}
 
 impl Objects {
-    pub fn create_table(conn: &Connection) -> rusqlite::Result<()> {
+    pub fn sql_create(conn: &Connection) -> rusqlite::Result<()> {
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS objects (

@@ -6,3 +6,8 @@ pub fn read_string<P: AsRef<Path>>(path: P) -> Result<String> {
     let s = fs::read_to_string(path)?;
     Ok(s.trim().to_string())
 }
+
+pub fn write_string<P: AsRef<Path>>(path: P, content: &str) -> Result<()> {
+    fs::write(path, content)?;
+    Ok(())
+}

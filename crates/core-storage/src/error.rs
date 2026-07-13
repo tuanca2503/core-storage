@@ -115,7 +115,7 @@ impl BaseError {
 }
 // ===== Result Extension Traits =====
 pub type BaseResult<T> = std::result::Result<T, BaseError>;
-trait BaseResultExt<T> {
+pub trait BaseResultExt<T> {
     fn message<M: Into<String>>(self, msg: M) -> BaseResult<T>;
     fn code(self, code: i32) -> BaseResult<T>;
     fn kind(self, kind: ErrorKind) -> BaseResult<T>;
