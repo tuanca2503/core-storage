@@ -2,14 +2,11 @@ use std::ffi::CStr;
 
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, ReadFile,
+    CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, PARTITION_SYSTEM_GUID, ReadFile,
 };
 use windows::Win32::System::IO::DeviceIoControl;
 use windows::Win32::System::Ioctl::{
-    GET_LENGTH_INFORMATION, IOCTL_DISK_GET_LENGTH_INFO, IOCTL_DISK_IS_WRITABLE,
-    IOCTL_STORAGE_GET_DEVICE_NUMBER, IOCTL_STORAGE_QUERY_PROPERTY, PropertyStandardQuery,
-    STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR, STORAGE_DEVICE_DESCRIPTOR, STORAGE_DEVICE_NUMBER,
-    STORAGE_PROPERTY_QUERY, StorageAccessAlignmentProperty, StorageDeviceProperty,
+    DRIVE_LAYOUT_INFORMATION_EX, GET_LENGTH_INFORMATION, IOCTL_DISK_GET_DRIVE_LAYOUT_EX, IOCTL_DISK_GET_LENGTH_INFO, IOCTL_DISK_IS_WRITABLE, IOCTL_STORAGE_GET_DEVICE_NUMBER, IOCTL_STORAGE_QUERY_PROPERTY, PARTITION_INFORMATION_EX, PARTITION_STYLE_GPT, PARTITION_STYLE_MBR, PropertyStandardQuery, STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR, STORAGE_DEVICE_DESCRIPTOR, STORAGE_DEVICE_NUMBER, STORAGE_PROPERTY_QUERY, StorageAccessAlignmentProperty, StorageDeviceProperty,
 };
 use windows::core::{PCWSTR, Result};
 
@@ -51,6 +48,73 @@ impl DiskHandle {
             device_path: self.device_path(disk_number)?,
             capacity_bytes: self.capacity_bytes()?,
         })
+    }
+    pub fn disk_number(&self) -> Result<u32> {
+        let mut bytes_returned = 0u32;
+        let mut device_number = STORAGE_DEVICE_NUMBER::default();
+        unsafe {
+            (DeviceIoControl(
+                self.0,
+                IOCTL_STORAGE_GET_DEVICE_NUMBER,
+                None,
+                0,
+                Some(&mut device_number as *mut _ as *mut _),
+                size_of::<STORAGE_DEVICE_NUMBER>() as u32,
+                Some(&mut bytes_returned),
+                None,
+            ))?;
+            Ok(device_number.DeviceNumber)
+        }
+    }
+    pub fn read_first_sector(&self) -> Result<[u8; 512]> {
+        let mut sector = [0u8; 512];
+        let mut bytes_read = 0u32;
+        unsafe {
+            ReadFile(self.0, Some(&mut sector), Some(&mut bytes_read), None)?;
+            Ok(sector)
+        }
+    }
+    pub fn is_boot_disk(&self) -> Result<bool> {
+        unsafe {
+            // DRIVE_LAYOUT_INFORMATION_EX là struct có "mảng đuôi" (PartitionEntry),
+            // nên phải tự cấp buffer đủ lớn cho nhiều partition rồi tự tính offset.
+            const MAX_PARTITIONS: usize = 128;
+            let buffer_size = size_of::<DRIVE_LAYOUT_INFORMATION_EX>()
+                + MAX_PARTITIONS * size_of::<PARTITION_INFORMATION_EX>();
+            let mut buffer = vec![0u8; buffer_size];
+
+            let mut bytes_returned = 0u32;
+            let ioctl_result = DeviceIoControl(
+                self.0,
+                IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
+                None,
+                0,
+                Some(buffer.as_mut_ptr() as *mut _),
+                buffer_size as u32,
+                Some(&mut bytes_returned),
+                None,
+            );
+            ioctl_result?;
+
+            let layout = &*(buffer.as_ptr() as *const DRIVE_LAYOUT_INFORMATION_EX);
+            let entry_ptr = layout.PartitionEntry.as_ptr();
+
+            for i in 0..layout.PartitionCount as usize {
+                let entry = &*entry_ptr.add(i);
+                let is_boot = if entry.PartitionStyle == PARTITION_STYLE_MBR {
+                    entry.Anonymous.Mbr.BootIndicator
+                } else if entry.PartitionStyle == PARTITION_STYLE_GPT {
+                    entry.Anonymous.Gpt.PartitionType == PARTITION_SYSTEM_GUID
+                } else {
+                    false
+                };
+
+                if is_boot {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
     //
     fn descriptor(&self) -> Result<(String, String, i32, bool)> {
@@ -96,23 +160,6 @@ impl DiskHandle {
             ))?;
         }
         Ok(length_info.Length as u64)
-    }
-    pub fn disk_number(&self) -> Result<u32> {
-        let mut bytes_returned = 0u32;
-        let mut device_number = STORAGE_DEVICE_NUMBER::default();
-        unsafe {
-            (DeviceIoControl(
-                self.0,
-                IOCTL_STORAGE_GET_DEVICE_NUMBER,
-                None,
-                0,
-                Some(&mut device_number as *mut _ as *mut _),
-                size_of::<STORAGE_DEVICE_NUMBER>() as u32,
-                Some(&mut bytes_returned),
-                None,
-            ))?;
-            Ok(device_number.DeviceNumber)
-        }
     }
     fn device_path(&self, disk_number: u32) -> Result<String> {
         Ok(format!(r"\\.\PhysicalDrive{disk_number}"))
