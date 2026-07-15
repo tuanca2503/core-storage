@@ -1,4 +1,6 @@
-use core_storage::{error::BaseResult, store::Store};
+use core_storage::store::Store;
+use core_storage_platform::error::BaseResult;
+
 
 //cargo run -p core --example test
 pub fn main() -> BaseResult<()> {

@@ -11,3 +11,5 @@ pub mod disk;
 pub mod raw;
 pub mod filesystem;
 pub mod format;
+pub mod error;
+

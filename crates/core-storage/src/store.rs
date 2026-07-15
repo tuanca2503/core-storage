@@ -2,8 +2,10 @@ mod file;
 mod models;
 mod sqlite;
 
+use core_storage_platform::error::{BaseError, BaseResult};
+
 use crate::{
-    error::{BaseError, BaseResult},
+    // error::{BaseError, BaseResult},
     store::{models::disks::Disks, sqlite::Sqlite},
 };
 

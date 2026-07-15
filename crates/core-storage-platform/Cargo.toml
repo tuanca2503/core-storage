@@ -18,4 +18,5 @@ windows = { version = "0.62", features = [
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+hex = "0.4"
 libc = "0.2"

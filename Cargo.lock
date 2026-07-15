@@ -68,6 +68,7 @@ name = "core-storage"
 version = "0.0.1"
 dependencies = [
  "chrono",
+ "core-storage-platform",
  "rusqlite",
  "sysinfo",
  "uuid",
@@ -77,6 +78,7 @@ dependencies = [
 name = "core-storage-platform"
 version = "0.0.1"
 dependencies = [
+ "hex",
  "libc",
  "windows",
 ]
@@ -176,6 +178,12 @@ checksum = "32069d97bb81e38fa67eab65e3393bf804bb85969f2bc06bf13f64aef5aba248"
 dependencies = [
  "hashbrown 0.17.1",
 ]
+
+[[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "iana-time-zone"

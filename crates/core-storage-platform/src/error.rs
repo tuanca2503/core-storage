@@ -31,23 +31,16 @@ impl std::fmt::Display for ErrorKind {
         }
     }
 }
-// ===== Error Codes (ranges) =====
-pub mod codes {
-    // Common: 1000-1999
-    pub const INVALID_INPUT: u32 = 1000;
-    pub const NOT_FOUND: u32 = 1001;
-    pub const PERMISSION_DENIED: u32 = 1002;
-    pub const INTERNAL: u32 = 1003;
-    pub const OUT_OF_SCOPE: u32 = 1004;
-    pub const INVALID_DATA: u32 = 1005;
-    pub const TIMEOUT: u32 = 1006;
-    // Storage/File: 4000-4999
-    pub const FILE_NOT_FOUND: u32 = 4000;
-    pub const FILE_PERMISSION: u32 = 4001;
-    pub const FILE_CORRUPT: u32 = 4002;
-    // Network: 5000-5999
-    pub const NETWORK_TIMEOUT: u32 = 5000;
-    pub const NETWORK_UNREACHABLE: u32 = 5001;
+// Common: 0-99
+#[repr(u32)]
+pub enum Codes {
+    InvalidInput = 1000,
+    NotFound,
+    PermissionDenied,
+    Internal,
+    Timeout,
+    //
+    MountVolume = 2000
 }
 // ===== Base Error Type =====
 pub struct BaseError {
@@ -78,7 +71,7 @@ impl BaseError {
     }
     pub fn internal(msg: impl Into<String>) -> Self {
         Self {
-            code: codes::INTERNAL,
+            code: Codes::Internal as u32,
             kind: ErrorKind::Software,
             severity: ErrorSeverity::Error,
             message: msg.into(),
@@ -87,7 +80,7 @@ impl BaseError {
     }
     pub fn bad_response(msg: impl Into<String>) -> Self {
         Self {
-            code: codes::INTERNAL,
+            code: Codes::InvalidInput as u32,
             kind: ErrorKind::External,
             severity: ErrorSeverity::Error,
             message: msg.into(),
@@ -96,7 +89,7 @@ impl BaseError {
     }
     pub fn not_found(msg: impl Into<String>) -> Self {
         Self {
-            code: codes::NOT_FOUND,
+            code: Codes::NotFound as u32,
             kind: ErrorKind::Software,
             severity: ErrorSeverity::Error,
             message: msg.into(),
@@ -105,7 +98,7 @@ impl BaseError {
     }
     pub fn timeout(msg: impl Into<String>) -> Self {
         Self {
-            code: codes::TIMEOUT,
+            code: Codes::Timeout as u32,
             kind: ErrorKind::System,
             severity: ErrorSeverity::Warning,
             message: msg.into(),
@@ -171,7 +164,7 @@ where
 {
     fn from(err: E) -> Self {
         Self {
-            code: codes::INTERNAL,
+            code: Codes::Internal as u32,
             kind: ErrorKind::Software,
             severity: ErrorSeverity::Fatal,
             message: err.to_string(),

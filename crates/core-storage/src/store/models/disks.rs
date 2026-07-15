@@ -1,12 +1,10 @@
 use chrono::Utc;
+use core_storage_platform::error::BaseResult;
 use rusqlite::{Connection, params};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-use crate::{
-    error::BaseResult,
-    store::file::{read_string, write_string},
-};
+use crate::store::file::{read_string, write_string};
 
 #[derive(Debug, Clone)]
 pub struct Disks {
