@@ -35,28 +35,25 @@ Allocation Bitmap vẫn giữ, nhưng chỉ ở **mức segment** (segment nào 
 
 ## 3. Superblock (4096 byte, sector-aligned)
 
-| Offset | Size | Field | Ghi chú |
-|---|---|---|---|
-| 0 | 4 | `magic` | `b"RPFS"` |
-| 4 | 4 | `version` | u32 |
-| 8 | 16 | `disk_uuid` | khớp `disk.json` |
-| 24 | 8 | `generation` | u64, tăng dần mỗi lần commit; mount chọn bản có generation cao nhất **và** CRC hợp lệ (kiểu ZFS uberblock) |
-| 32 | 8 | `created_at_ms` | u64 |
-| 40 | 8 | `updated_at_ms` | u64 |
-| 48 | 1 | `disk_state` | 0=RW, 1=RO, 2=Migrating, 3=Retired — đổi trạng thái ổ chỉ bằng field này, không cần sửa code/Docker |
-| 49 | 1 | `sector_size_pow2` | vd 12 = 4096 (2^12) |
-| 50 | 2 | `reserved0` | |
-| 52 | 8 | `total_bytes` | dung lượng partition RPFS quản lý |
-| 60 | 4 | `segment_size_bytes` | mặc định, xem mục 9 |
-| 64 | 4 | `segment_count` | tính sẵn lúc format, tránh chia lại mỗi lần mount |
-| 68 | 8 | `bitmap_offset` | |
-| 76 | 8 | `bitmap_size_bytes` | |
-| 84 | 8 | `segment_region_offset` | |
-| 92 | 32 | `reserved1` | dự trữ mở rộng schema về sau, không phải migrate toàn bộ |
-| 124 | 4 | `header_crc32` | CRC32C của 124 byte phía trên |
-| 128 | 3968 | padding | lấp đủ 1 sector |
+| Offset | Size | Field | Type | Description |
+|------:|----:|-------|------|-------------|
+| 0 | 12 | magic | `[u8; 12]` | `"CORE STORAGE"` |
+| 12 | 4 | version | `u32` | Storage format version |
+| 16 | 16 | uuid | `UUID` | Storage UUID |
+| 32 | 8 | created_at_ms | `u64` | Creation timestamp (Unix ms) |
+| 40 | 1 | state | `u8` | `0=Active`, `1=Maintain`, `2=Critical` |
+| 41 | 7 | padding | - | Alignment padding |
+| 48 | 8 | total_bytes | `u64` | Total storage capacity (bytes) |
+| 56 | 8 | segment_size_bytes | `u64` | Size of each segment (e.g. 64 GiB) |
+| 64 | 4 | segment_count | `u32` | Total number of segments |
+| 68 | 4 | padding | - | Alignment padding |
+| 72 | 8 | bitmap_offset | `u64` | Bitmap start offset (typically 4096) |
+| 80 | 8 | bitmap_size_bytes | `u64` | Bitmap size (bytes) |
+| 88 | 8 | segment_region_offset | `u64` | Segment region start offset |
+| 96 | 4 | header_crc32 | `u32` | CRC32C of bytes `0..95` |
+| 100 | 3996 | padding | - | Zero-filled padding to 4096 bytes |
 
-Ghi Superblock: viết bản mới, tính CRC, mới tăng `generation`, fsync — **không sửa in-place bản đang active**. Nếu crash giữa chừng ghi A, CRC của A sẽ sai → mount tự rơi về B (hoặc ngược lại). Đây là cơ chế transaction đơn giản thay cho một WAL riêng ở tầng ổ raw.
+
 
 ## 4. Segment Allocation Bitmap
 

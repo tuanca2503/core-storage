@@ -1,14 +1,13 @@
-use core_storage_platform::{disk::enumerate::*, error::BaseResult};
+use core_storage_platform::{
+    disk::{allowed_format,enumerate_physical_disks},
+    error::BaseResult,
+};
 
 //cargo run -p core-storage-platform --example test
 pub fn main() -> BaseResult<()> {
     let disks = enumerate_physical_disks()?;
+    allowed_format(true, &disks[1])?;
 
-    for d in disks {
-        let a = has_directory(d.volume_paths);
-        println!(">>{:?}", a);
-
-    }
     // println!("== Danh sách ổ đĩa vật lý (SetupAPI) ==");
     // if disks.is_empty() {
     //     println!("  (Không thấy ổ nào — chạy lại với quyền Administrator.)");

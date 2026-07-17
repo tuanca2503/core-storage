@@ -5,11 +5,18 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::error::{BaseError, BaseResult};
+use crate::error::{BaseError, BaseResult, Codes};
 pub struct TempMount(PathBuf);
 
 impl TempMount {
-    pub fn mount(volume: &Path) -> BaseResult<Self> {
+    pub fn mount(volume: &Path) -> BaseResult<Option<Self>> {
+        if unsafe { libc::geteuid() } != 0 {
+            return Err(BaseError::system_warning(
+                "This operation requires root privileges.".to_string(),
+                Codes::PermissionDenied,
+            ));
+        }
+
         let id = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
         let mount_point = std::env::temp_dir().join(format!("core-storage-{id}"));
         fs::create_dir_all(&mount_point)?;
@@ -20,17 +27,28 @@ impl TempMount {
             .stderr(Stdio::null())
             .status()?;
         if !status.success() {
-            return Err(BaseError::internal("Failed to mount volume"));
+            return Ok(None);
         }
-        Ok(Self(mount_point))
+        Ok(Some(Self(mount_point)))
     }
 
     pub fn has_directory_entries(&self) -> bool {
         let mut entries = match std::fs::read_dir(&self.0) {
             Ok(entries) => entries,
-            Err(_) => return true, 
+            Err(_) => return true,
         };
         entries.next().is_some()
+    }
+    pub fn has_system_directory(&self) -> bool {
+        let root_indicators = ["boot", "etc", "bin", "usr", "var"];
+
+        for name in root_indicators {
+            if self.0.join(name).exists() {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn unmount(&self) -> BaseResult<()> {
@@ -42,7 +60,6 @@ impl TempMount {
         fs::remove_dir_all(&self.0)?;
         Ok(())
     }
-
 }
 
 impl Drop for TempMount {

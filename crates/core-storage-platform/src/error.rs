@@ -1,4 +1,3 @@
-// ===== Error Metadata =====
 pub enum ErrorSeverity {
     Info = 0,
     Warning = 1,
@@ -40,7 +39,8 @@ pub enum Codes {
     Internal,
     Timeout,
     //
-    MountVolume = 2000
+    Command = 2000,
+    Corrupt,
 }
 // ===== Base Error Type =====
 pub struct BaseError {
@@ -67,6 +67,15 @@ impl BaseError {
             severity,
             message: message.into(),
             source: Some(Box::new(err)),
+        }
+    }
+    pub fn command(msg: impl Into<String>) -> Self {
+        Self {
+            code: Codes::Command as u32,
+            kind: ErrorKind::System,
+            severity: ErrorSeverity::Error,
+            message: msg.into(),
+            source: None,
         }
     }
     pub fn internal(msg: impl Into<String>) -> Self {
@@ -105,6 +114,58 @@ impl BaseError {
             source: None,
         }
     }
+
+    pub fn system_warning(msg: impl Into<String>, code: Codes) -> Self {
+        Self {
+            code: code as u32,
+            kind: ErrorKind::System,
+            severity: ErrorSeverity::Warning,
+            message: msg.into(),
+            source: None,
+        }
+    }
+    pub fn system_error(msg: impl Into<String>, code: Codes) -> Self {
+        Self {
+            code: code as u32,
+            kind: ErrorKind::System,
+            severity: ErrorSeverity::Error,
+            message: msg.into(),
+            source: None,
+        }
+    }
+
+}
+impl std::fmt::Display for BaseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: [{}] From {} \n └─ {}",
+            self.severity, self.code, self.kind, self.message
+        )
+    }
+}
+impl std::fmt::Debug for BaseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: [{}] From {} \n └─ {}",
+            self.severity, self.code, self.kind, self.message
+        )
+    }
+}
+impl<E> From<E> for BaseError
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn from(err: E) -> Self {
+        Self {
+            code: Codes::Internal as u32,
+            kind: ErrorKind::Software,
+            severity: ErrorSeverity::Fatal,
+            message: err.to_string(),
+            source: Some(Box::new(err)),
+        }
+    }
 }
 // ===== Result Extension Traits =====
 pub type BaseResult<T> = std::result::Result<T, BaseError>;
@@ -137,38 +198,5 @@ where
             base.kind = kind;
             base
         })
-    }
-}
-// =====  =====
-impl std::fmt::Display for BaseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}: [{}] From {} \n └─ {}",
-            self.severity, self.code, self.kind, self.message
-        )
-    }
-}
-impl std::fmt::Debug for BaseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}: [{}] From {} \n └─ {}",
-            self.severity, self.code, self.kind, self.message
-        )
-    }
-}
-impl<E> From<E> for BaseError
-where
-    E: std::error::Error + Send + Sync + 'static,
-{
-    fn from(err: E) -> Self {
-        Self {
-            code: Codes::Internal as u32,
-            kind: ErrorKind::Software,
-            severity: ErrorSeverity::Fatal,
-            message: err.to_string(),
-            source: Some(Box::new(err)),
-        }
     }
 }

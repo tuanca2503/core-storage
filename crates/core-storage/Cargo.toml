@@ -10,5 +10,4 @@ repository.workspace = true
 core-storage-platform = { path = "../core-storage-platform" }
 rusqlite = {version = "0.40.1", features = ["bundled"]}
 sysinfo = "0.39.6"
-uuid = { workspace = true }
 chrono = { workspace = true }

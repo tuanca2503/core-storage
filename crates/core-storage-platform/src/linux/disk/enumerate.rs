@@ -4,10 +4,7 @@ use std::{
     str::FromStr,
 };
 
-use crate::{
-    disk::{PhysicalDisk, mout::TempMount},
-    error::BaseResult,
-};
+use crate::{disk::PhysicalDisk, error::BaseResult};
 
 pub fn enumerate_physical_disks() -> BaseResult<Vec<PhysicalDisk>> {
     let mut disks = Vec::new();
@@ -63,24 +60,6 @@ pub fn enumerate_physical_disks() -> BaseResult<Vec<PhysicalDisk>> {
     }
     Ok(disks)
 }
-
-pub fn has_directory(volume_paths: Vec<PathBuf>) -> bool {
-    if volume_paths.len() == 0 {
-        //to-do check custom format here if match return true else false
-        return false;
-    }
-    for volume in volume_paths {
-        let mount = match TempMount::mount(&volume) {
-            Ok(m) => m,
-            Err(_) => return true,
-        };
-        if mount.has_directory_entries() {
-            return true;
-        }
-    }
-
-    false
-}
 //
 fn read_as<T>(path: &Path) -> Option<T>
 where
@@ -107,4 +86,3 @@ fn enumerate_volumes(sysfs_path: &PathBuf, name: &str) -> BaseResult<Vec<PathBuf
 
     Ok(volumes)
 }
-
