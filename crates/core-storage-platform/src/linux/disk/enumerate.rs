@@ -1,88 +1,89 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    str::FromStr,
+use crate::{
+    StorageInfo,
+    disk::{DiskInfo, entry::DiskEntry},
+    ensure_root,
+    error::BaseResult,
+    format_date, format_size,
+    header::Header,
 };
 
-use crate::{disk::PhysicalDisk, error::BaseResult};
+///////////////////////////////////////////////////////////////////////////////////////////
 
-pub fn enumerate_physical_disks() -> BaseResult<Vec<PhysicalDisk>> {
+pub fn enumerate_storage_info_to_table() -> BaseResult<Vec<Vec<String>>> {
+    ensure_root()?;
     let mut disks = Vec::new();
-    let block_dir = Path::new("/sys/block");
-    if !block_dir.exists() {
-        return Ok(disks);
-    }
-    for entry in fs::read_dir(block_dir)? {
-        let entry = entry?;
-        let name = entry.file_name().to_string_lossy().to_string();
-        let sysfs_path = entry.path();
-        // Bỏ qua các thiết bị ảo: loop, ram, dm-*, sr (CD/DVD) nếu không cần
-        if name.starts_with("loop")
-            || name.starts_with("ram")
-            || name.starts_with("dm-")
-            || name.starts_with("zram")
-            || name.starts_with("md")
-            || name.starts_with("sr")
-            || !sysfs_path.join("device").exists()
-        {
-            continue;
-        }
-        let sectors = read_as::<u64>(&sysfs_path.join("size")).unwrap_or(0);
-        if sectors == 0 {
-            continue;
-        }
-        let logical_sector_size =
-            read_as::<u32>(&sysfs_path.join("queue/logical_block_size")).unwrap_or(512);
-        let physical_sector_size = read_as::<u32>(&sysfs_path.join("queue/physical_block_size"))
-            .unwrap_or(logical_sector_size);
-        let removable = read_as::<u32>(&sysfs_path.join("removable")).unwrap_or(0) != 0;
-        let read_only = read_as::<u32>(&sysfs_path.join("ro")).unwrap_or(0) != 0;
-        let capacity_bytes = sectors.saturating_mul(logical_sector_size as u64);
-        let vendor = read_as::<String>(&sysfs_path.join("device/vendor")).unwrap_or_default();
-        let device_model = read_as::<String>(&sysfs_path.join("device/model")).unwrap_or_default();
-        let model = format!("{} {}", vendor.trim(), device_model.trim());
-        let serial = read_as::<String>(&sysfs_path.join("device/serial")).unwrap_or_default();
-        let device_path = PathBuf::from("/dev").join(&name);
+    disks.push(vec![
+        "NAME".into(),
+        "UUID".into(),
+        "VERS".into(),
+        "STATE".into(),
+        "SEG_COUNT".into(),
+        "TOTAL".into(),
+        "CREATE_AT".into(),
+    ]);
 
-        disks.push(PhysicalDisk {
-            volume_paths: enumerate_volumes(&sysfs_path, &name)?,
-            name,
-            device_path,
-            sysfs_path,
-            model,
-            serial,
-            removable,
-            read_only,
-            capacity_bytes,
-            logical_sector_size,
-            physical_sector_size,
-        });
-    }
+    DiskEntry::for_each_disk(|disk_entry| {
+        let volume_paths = disk_entry.volume_paths()?;
+        let header = Header::try_load(&volume_paths, &disk_entry.device_path);
+        disks.push(vec![
+            disk_entry.name.clone(),
+            uuid::Uuid::from_bytes(header.uuid).to_string(),
+            header.version.to_string(),
+            header.state.to_string(),
+            header.segment_count.to_string(),
+            format_size(header.total_bytes),
+            format_date(header.created_at_ms),
+        ]);
+        Ok(())
+    })?;
+
     Ok(disks)
 }
-//
-fn read_as<T>(path: &Path) -> Option<T>
-where
-    T: FromStr,
-{
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|s| s.trim().parse::<T>().ok())
+
+pub fn enumerate_disk_info() -> BaseResult<Vec<DiskInfo>> {
+    let mut disks = Vec::new();
+    DiskEntry::for_each_disk(|disk_entry| {
+        let logical_sector_size = disk_entry.logical_sector_size();
+        disks.push(DiskInfo::new(
+            disk_entry.serial(),
+            disk_entry.model(),
+            disk_entry.sysfs_path.clone(),
+            disk_entry.device_path.clone(),
+            disk_entry.volume_paths()?,
+            disk_entry.removable(),
+            disk_entry.read_only(),
+            disk_entry.capacity_bytes(logical_sector_size),
+            logical_sector_size,
+            disk_entry.physical_sector_size(logical_sector_size),
+        ));
+        Ok(())
+    })?;
+
+    Ok(disks)
 }
-fn enumerate_volumes(sysfs_path: &PathBuf, name: &str) -> BaseResult<Vec<PathBuf>> {
-    let mut volumes = Vec::new();
-    for entry in fs::read_dir(sysfs_path)? {
-        let entry = entry?;
 
-        if !entry.file_type()?.is_dir() {
-            continue;
-        }
-        let file_name = entry.file_name();
-        let file_name = file_name.to_string_lossy();
-        if file_name.starts_with(name) {
-            volumes.push(PathBuf::from("/dev").join(file_name.as_ref()));
-        }
-    }
-
-    Ok(volumes)
+pub fn enumerate_storage_info() -> BaseResult<Vec<StorageInfo>> {
+    ensure_root()?;
+    let mut disks = Vec::new();
+    DiskEntry::for_each_disk(|disk_entry| {
+        let logical_sector_size = disk_entry.logical_sector_size();
+        let device_path = disk_entry.device_path.clone();
+        let volume_paths = disk_entry.volume_paths()?;
+        let header = Header::try_load(&volume_paths, &device_path);
+        let disk = DiskInfo::new(
+            disk_entry.serial(),
+            disk_entry.model(),
+            disk_entry.sysfs_path.clone(),
+            disk_entry.device_path.clone(),
+            disk_entry.volume_paths()?,
+            disk_entry.removable(),
+            disk_entry.read_only(),
+            disk_entry.capacity_bytes(logical_sector_size),
+            logical_sector_size,
+            disk_entry.physical_sector_size(logical_sector_size),
+        );
+        disks.push(StorageInfo::new(disk, header));
+        Ok(())
+    })?;
+    Ok(disks)
 }

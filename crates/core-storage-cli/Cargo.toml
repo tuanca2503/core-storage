@@ -1,5 +1,5 @@
 [package]
-name = "cli"
+name = "core-storage-cli"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -7,4 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-core = { path = "../core-storage" }
+core-storage = { path = "../core-storage" }
+core-storage-platform = { path = "../core-storage-platform" }
+serde = { workspace=true }
+serde_json = {workspace=true}

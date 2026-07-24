@@ -41,6 +41,7 @@ pub enum Codes {
     //
     Command = 2000,
     Corrupt,
+    Raw,
 }
 // ===== Base Error Type =====
 pub struct BaseError {
@@ -49,91 +50,98 @@ pub struct BaseError {
     pub severity: ErrorSeverity,
     pub message: String,
     pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    pub location: &'static std::panic::Location<'static>,
 }
+
 impl BaseError {
-    pub fn new<E>(
+    #[track_caller]
+    pub fn new(
         code: u32,
         kind: ErrorKind,
         severity: ErrorSeverity,
         message: impl Into<String>,
-        err: E,
-    ) -> Self
-    where
-        E: std::error::Error + Send + Sync + 'static,
-    {
+    ) -> Self {
         Self {
             code,
             kind,
             severity,
             message: message.into(),
+            source: None,
+            location: std::panic::Location::caller(),
+        }
+    }
+    #[track_caller]
+    pub fn with_err<E>(self, err: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self {
             source: Some(Box::new(err)),
+            ..self
         }
     }
-    pub fn command(msg: impl Into<String>) -> Self {
-        Self {
-            code: Codes::Command as u32,
-            kind: ErrorKind::System,
-            severity: ErrorSeverity::Error,
-            message: msg.into(),
-            source: None,
-        }
+    //
+    pub fn print(&self) {
+        eprintln!("{self}");
     }
-    pub fn internal(msg: impl Into<String>) -> Self {
-        Self {
-            code: Codes::Internal as u32,
-            kind: ErrorKind::Software,
-            severity: ErrorSeverity::Error,
-            message: msg.into(),
-            source: None,
-        }
+    //
+    #[track_caller]
+    pub fn external_error(msg: impl Into<String>, code: Codes) -> Self {
+        Self::new(
+            code as u32,
+            ErrorKind::External,
+            ErrorSeverity::Error,
+            msg.into(),
+        )
     }
-    pub fn bad_response(msg: impl Into<String>) -> Self {
-        Self {
-            code: Codes::InvalidInput as u32,
-            kind: ErrorKind::External,
-            severity: ErrorSeverity::Error,
-            message: msg.into(),
-            source: None,
-        }
+    //
+    #[track_caller]
+    pub fn software_warning(msg: impl Into<String>, code: Codes) -> Self {
+        Self::new(
+            code as u32,
+            ErrorKind::Software,
+            ErrorSeverity::Warning,
+            msg.into(),
+        )
     }
-    pub fn not_found(msg: impl Into<String>) -> Self {
-        Self {
-            code: Codes::NotFound as u32,
-            kind: ErrorKind::Software,
-            severity: ErrorSeverity::Error,
-            message: msg.into(),
-            source: None,
-        }
+    #[track_caller]
+    pub fn software_error(msg: impl Into<String>, code: Codes) -> Self {
+        Self::new(
+            code as u32,
+            ErrorKind::Software,
+            ErrorSeverity::Error,
+            msg.into(),
+        )
     }
-    pub fn timeout(msg: impl Into<String>) -> Self {
-        Self {
-            code: Codes::Timeout as u32,
-            kind: ErrorKind::System,
-            severity: ErrorSeverity::Warning,
-            message: msg.into(),
-            source: None,
-        }
-    }
-
+    //
+    #[track_caller]
     pub fn system_warning(msg: impl Into<String>, code: Codes) -> Self {
-        Self {
-            code: code as u32,
-            kind: ErrorKind::System,
-            severity: ErrorSeverity::Warning,
-            message: msg.into(),
-            source: None,
-        }
+        Self::new(
+            code as u32,
+            ErrorKind::System,
+            ErrorSeverity::Warning,
+            msg.into(),
+        )
     }
+    #[track_caller]
     pub fn system_error(msg: impl Into<String>, code: Codes) -> Self {
-        Self {
-            code: code as u32,
-            kind: ErrorKind::System,
-            severity: ErrorSeverity::Error,
-            message: msg.into(),
-            source: None,
-        }
+        Self::new(
+            code as u32,
+            ErrorKind::System,
+            ErrorSeverity::Error,
+            msg.into(),
+        )
     }
-
+    //
+    #[track_caller]
+    pub fn user_error(msg: impl Into<String>, code: Codes) -> Self {
+        Self::new(
+            code as u32,
+            ErrorKind::User,
+            ErrorSeverity::Error,
+            msg.into(),
+        )
+    }
 }
 impl std::fmt::Display for BaseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -141,30 +149,41 @@ impl std::fmt::Display for BaseError {
             f,
             "{}: [{}] From {} \n └─ {}",
             self.severity, self.code, self.kind, self.message
-        )
+        )?;
+        Ok(())
     }
 }
 impl std::fmt::Debug for BaseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}: [{}] From {} \n └─ {}",
-            self.severity, self.code, self.kind, self.message
-        )
+            "{}: [{}] From {} ({}:{})\n └─ {}",
+            self.severity,
+            self.code,
+            self.kind,
+            self.location.file(),
+            self.location.line(),
+            self.message
+        )?;
+        if let Some(src) = &self.source {
+            write!(f, "\n    caused by: {}", src)?;
+        }
+        Ok(())
     }
 }
 impl<E> From<E> for BaseError
 where
     E: std::error::Error + Send + Sync + 'static,
 {
+    #[track_caller]
     fn from(err: E) -> Self {
-        Self {
-            code: Codes::Internal as u32,
-            kind: ErrorKind::Software,
-            severity: ErrorSeverity::Fatal,
-            message: err.to_string(),
-            source: Some(Box::new(err)),
-        }
+        Self::new(
+            Codes::Internal as u32,
+            ErrorKind::Software,
+            ErrorSeverity::Fatal,
+            err.to_string(),
+        )
+        .with_err(Box::new(err))
     }
 }
 // ===== Result Extension Traits =====
@@ -178,6 +197,7 @@ impl<T, E> BaseResultExt<T> for std::result::Result<T, E>
 where
     E: Into<BaseError>,
 {
+    #[track_caller]
     fn message<M: Into<String>>(self, msg: M) -> BaseResult<T> {
         self.map_err(|e| {
             let mut base = e.into();
@@ -185,6 +205,7 @@ where
             base
         })
     }
+    #[track_caller]
     fn code(self, code: i32) -> BaseResult<T> {
         self.map_err(|e| {
             let mut base = e.into();
@@ -192,6 +213,7 @@ where
             base
         })
     }
+    #[track_caller]
     fn kind(self, kind: ErrorKind) -> BaseResult<T> {
         self.map_err(|e| {
             let mut base = e.into();

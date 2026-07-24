@@ -1,7 +1,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -10,21 +10,12 @@ pub struct TempMount(PathBuf);
 
 impl TempMount {
     pub fn mount(volume: &Path) -> BaseResult<Option<Self>> {
-        if unsafe { libc::geteuid() } != 0 {
-            return Err(BaseError::system_warning(
-                "This operation requires root privileges.".to_string(),
-                Codes::PermissionDenied,
-            ));
-        }
-
         let id = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
         let mount_point = std::env::temp_dir().join(format!("core-storage-{id}"));
         fs::create_dir_all(&mount_point)?;
         let status = Command::new("mount")
             .arg(volume)
             .arg(&mount_point)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
             .status()?;
         if !status.success() {
             return Ok(None);
@@ -51,19 +42,26 @@ impl TempMount {
         false
     }
 
-    fn unmount(&self) -> BaseResult<()> {
-        Command::new("umount")
-            .arg(&self.0)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()?;
-        fs::remove_dir_all(&self.0)?;
+    pub fn unmount(volume: &Path) -> BaseResult<()> {
+        let output = Command::new("umount").arg(volume).output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            if !stderr.contains("not mounted") {
+                return Err(BaseError::system_error(
+                    format!("Unmount failed {}", stderr),
+                    Codes::Command,
+                ));
+            }
+        }
+
+        _ = fs::remove_dir_all(volume);
         Ok(())
     }
 }
 
 impl Drop for TempMount {
     fn drop(&mut self) {
-        let _ = self.unmount();
+        let _ = TempMount::unmount(&self.0);
     }
 }

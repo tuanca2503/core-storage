@@ -4,7 +4,7 @@ members = [
     "crates/core-storage",
     "crates/core-storage-platform",
 
-    # "crates/core-storage-cli",
+    "crates/core-storage-cli",
     # "crates/*",
 ]
 

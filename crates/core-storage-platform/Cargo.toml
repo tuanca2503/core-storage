@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 uuid = { version = "1.23.5", features = ["v7"] }
+chrono = {workspace=true}
 
 
 [target.'cfg(target_os = "windows")'.dependencies]

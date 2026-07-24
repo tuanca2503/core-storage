@@ -1,5 +1,5 @@
 pub mod chunks;
-pub mod disks;
+pub mod storage_info;
 pub mod objects;
 pub mod segments;
 

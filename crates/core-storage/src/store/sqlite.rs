@@ -1,4 +1,4 @@
-use crate::store::models::{chunks::Chunks, disks::Disks, objects::Objects, segments::Segments};
+use crate::store::models::{chunks::Chunks,  objects::Objects, segments::Segments};
 use rusqlite::Connection;
 use std::path::Path;
 
@@ -18,7 +18,6 @@ impl Sqlite {
     }
     //
     fn create(conn: &Connection) -> rusqlite::Result<()> {
-        _ = Disks::sql_create(conn);
         _ = Segments::sql_create(conn);
         _ = Chunks::sql_create(conn);
         _ = Objects::sql_create(conn);

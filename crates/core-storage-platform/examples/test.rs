@@ -1,12 +1,24 @@
+
 use core_storage_platform::{
-    disk::{allowed_format,enumerate_physical_disks},
-    error::BaseResult,
+    disk::enumerate, error::BaseResult,
 };
 
 //cargo run -p core-storage-platform --example test
 pub fn main() -> BaseResult<()> {
-    let disks = enumerate_physical_disks()?;
-    allowed_format(true, &disks[1])?;
+    let disks = enumerate::enumerate_storage_info()?;
+    println!(">>>{:?}",disks);
+    let a = &disks[1];
+
+    // let mut device = OpenOptions::new()
+    //     .read(true)
+    //     .write(false)
+    //     .open(&a.device_path)?;
+    // // format_disk(false,FormatMode::Quick,a)?;
+    // let b = Header::load(&mut device)?;
+    // let c = b.total_bytes == a.capacity_bytes;
+    // println!("done {:?} > {}", b,c);
+    
+    // allowed_format(true, &disks[1])?;
 
     // println!("== Danh sách ổ đĩa vật lý (SetupAPI) ==");
     // if disks.is_empty() {
