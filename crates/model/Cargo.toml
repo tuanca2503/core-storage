@@ -1,0 +1,13 @@
+[package]
+name = "model"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+rusqlite = {version = "0.40.1", features = ["bundled"]}
+uuid = { version = "1.23.5", features = ["v7"] }
+crc32c = "0.6"
+

@@ -1,0 +1,15 @@
+[package]
+name = "core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+model = { path = "../model" }
+
+platform = { path = "../platform" }
+rusqlite = {version = "0.40.1", features = ["bundled"]}
+sysinfo = "0.39.6"
+chrono = { workspace = true }
