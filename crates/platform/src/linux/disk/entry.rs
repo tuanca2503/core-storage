@@ -1,11 +1,9 @@
 use std::{
     fs::{self, File, OpenOptions},
+    io::{Error, Result},
     path::PathBuf,
     str::FromStr,
 };
-
-use model::{BaseError, BaseResult, ErrorCode};
-
 
 pub struct DiskEntry {
     pub name: String,
@@ -20,13 +18,13 @@ impl DiskEntry {
             name,
         }
     }
-    pub fn verify(name: String) -> BaseResult<Self> {
+    pub fn verify(name: String) -> Result<Self> {
         let s = Self::new(name);
         if !s.device_path.exists() {
-            return Err(BaseError::system_warning(
-                format!("Device not found: {:?}", s.device_path),
-                ErrorCode::InvalidInput,
-            ));
+            return Err(Error::other(format!(
+                "Device not found: {:?}",
+                s.device_path
+            )));
         }
         Ok(s)
     }
@@ -42,7 +40,7 @@ impl DiskEntry {
     /// # Returns
     ///
     /// An opened device handle as [`File`].
-    pub fn open_device(&self, mode: u8) -> BaseResult<File> {
+    pub fn open_device(&self, mode: u8) -> Result<File> {
         let file = match mode {
             2 => OpenOptions::new()
                 .read(true)
@@ -83,12 +81,15 @@ impl DiskEntry {
     pub fn read_only(&self) -> bool {
         self.read_sysfs::<u32>("ro").unwrap_or(0) != 0
     }
+    pub fn rotational(&self) -> bool {
+        self.read_sysfs::<u32>("queue/rotational").unwrap_or(0) != 0
+    }
     pub fn capacity_bytes(&self, logical_sector_size: u32) -> u64 {
         self.sectors().saturating_mul(logical_sector_size as u64)
     }
-    pub fn for_each_disk<F>(mut f: F) -> BaseResult<()>
+    pub fn for_each_disk<F>(mut f: F) -> Result<()>
     where
-        F: FnMut(&Self) -> BaseResult<()>,
+        F: FnMut(&Self) -> Result<()>,
     {
         for entry in fs::read_dir("/sys/block")? {
             let entry = entry?;
@@ -111,7 +112,7 @@ impl DiskEntry {
 
         Ok(())
     }
-    pub fn has_volumes(&self) -> BaseResult<bool> {
+    pub fn has_volumes(&self) -> Result<bool> {
         for entry in fs::read_dir(&self.sysfs_path)? {
             let entry = entry?;
             if entry.file_type()?.is_dir()
@@ -122,7 +123,7 @@ impl DiskEntry {
         }
         Ok(false)
     }
-    pub fn volume_paths(&self) -> BaseResult<Vec<PathBuf>> {
+    pub fn volume_paths(&self) -> Result<Vec<PathBuf>> {
         let mut volumes = Vec::new();
         for entry in fs::read_dir(&self.sysfs_path)? {
             let entry = entry?;

@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{Read, Seek, SeekFrom},
+    io::{Read, Result, Seek, SeekFrom},
 };
 
 use crate::{
@@ -17,22 +17,18 @@ pub fn to_bytes(segment: &Segment) -> Vec<u8> {
     w.into_bytes()
 }
 
-pub fn from_bytes(buf: &[u8]) -> Segment {
+pub fn from_bytes(buf: &[u8]) -> Result<Segment> {
     let mut r = Reader::new(buf);
-    Segment {
-        chunk_count: r.read_u64(),
-        chunk_capacity: r.read_u64(),
-    }
+    Ok(Segment {
+        chunk_count: r.read_u64()?,
+        chunk_capacity: r.read_u64()?,
+    })
 }
 
-pub fn from_device(index: u64, device: &mut File) -> Segment {
+pub fn from_device(index: u64, device: &mut File) -> Result<Segment> {
     let mut buf = vec![0u8; HEADER_SIZE as usize];
-    device
-        .seek(SeekFrom::Start(offset(index)))
-        .expect("[Segment]> Failed to seek index of device");
-    device
-        .read_exact(&mut buf)
-        .expect("[Segment]> Failed to read header of device");
+    device.seek(SeekFrom::Start(offset(index)))?;
+    device.read_exact(&mut buf)?;
     from_bytes(&buf)
 }
 

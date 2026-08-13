@@ -1,16 +1,11 @@
-#[cfg(target_os = "windows")]
-pub use crate::windows::disk::*;
+use crate::{BaseError, BaseResult, ErrorCode};
+use model::{segment_bin, storage_bin};
 
-#[cfg(target_os = "linux")]
-pub use crate::linux::disk::*;
+use platform::disk::DiskEntry;
 
-#[cfg(target_os = "macos")]
-pub use crate::macos::disk::*;
+use crate::format::{format_date, format_size};
 
-use model::{ BaseResult, Segment, Storage, segment_bin, storage_bin};
-use service::format::{format_date, format_size};
-
-pub fn physical_disk_info() -> BaseResult<Vec<Vec<String>>> {
+pub fn physical_disk_to_table() -> BaseResult<Vec<Vec<String>>> {
     let mut disks = Vec::new();
     disks.push(vec![
         "SERIAL".into(),
@@ -23,6 +18,7 @@ pub fn physical_disk_info() -> BaseResult<Vec<Vec<String>>> {
         "TOTAL".into(),
         "LS".into(),
         "PS".into(),
+        "TYPE".into(),
     ]);
 
     DiskEntry::for_each_disk(|disk_entry| {
@@ -45,6 +41,11 @@ pub fn physical_disk_info() -> BaseResult<Vec<Vec<String>>> {
             disk_entry
                 .physical_sector_size(logical_sector_size)
                 .to_string(),
+            if disk_entry.rotational() {
+                "HDD".to_string()
+            } else {
+                "SSD".to_string()
+            },
         ]);
         Ok(())
     })?;
@@ -65,7 +66,7 @@ pub fn storage_to_table(valid: bool) -> BaseResult<Vec<Vec<String>>> {
     ]);
     DiskEntry::for_each_disk(|disk_entry| {
         if !valid || !disk_entry.has_volumes()? {
-            let storage = storage_bin::from_device(&mut disk_entry.open_device(0)?);
+            let storage = storage_bin::from_device(&mut disk_entry.open_device(0)?)?;
             disks.push(vec![
                 disk_entry.name.clone(),
                 storage.state.to_string(),
@@ -73,7 +74,7 @@ pub fn storage_to_table(valid: bool) -> BaseResult<Vec<Vec<String>>> {
                 storage.version.to_string(),
                 storage.segment_count.to_string(),
                 format_size(storage.capacity_bytes),
-                format_date(storage.created_at_ms),
+                format_date(storage.created_at),
             ]);
         }
         Ok(())
@@ -82,19 +83,27 @@ pub fn storage_to_table(valid: bool) -> BaseResult<Vec<Vec<String>>> {
     Ok(disks)
 }
 
-pub fn segment_to_table(name: String) -> BaseResult<Vec<Vec<String>>> {
+pub fn segment_to_table(name: Option<String>, valid: bool) -> BaseResult<Vec<Vec<String>>> {
+    let device_name = name
+        .filter(|n| !n.is_empty())
+        .ok_or_else(|| BaseError::user_error("Empty device name", ErrorCode::InvalidInput))?;
+
     let mut segments = Vec::new();
     segments.push(vec![
         "INDEX".into(),
         "CHUNK_COUNT".into(),
         "CHUNK_CAPACITY".into(),
     ]);
-    let disk_entry = DiskEntry::verify(name)?;
+    let disk_entry = DiskEntry::verify(device_name)?;
+
     let mut device = disk_entry.open_device(0)?;
-    let storage = storage_bin::from_device(&mut device);
+    let storage = storage_bin::from_device(&mut device)?;
 
     for index in 0..storage.segment_count {
-        let segment = segment_bin::from_device(index, &mut device);
+        let segment = segment_bin::from_device(index, &mut device)?;
+        if valid && segment.is_full() {
+            continue;
+        }
         segments.push(vec![
             format!("{}", index + 1).into(),
             segment.chunk_count.to_string(),

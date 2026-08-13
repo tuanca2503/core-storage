@@ -14,7 +14,6 @@ impl Writer {
         self.0.len()
     }
 
-    /// Ghi thêm 0 cho đến khi buffer đạt độ dài `pos` (chỉ dùng khi pos > position hiện tại).
     pub fn seek(&mut self, pos: usize) {
         if pos > self.0.len() {
             self.0.resize(pos, 0);
@@ -30,6 +29,10 @@ impl Writer {
         self.0.push(v);
     }
 
+    pub fn write_u16(&mut self, v: u16) {
+        self.0.extend_from_slice(&v.to_le_bytes());
+    }
+
     pub fn write_u32(&mut self, v: u32) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
@@ -40,6 +43,9 @@ impl Writer {
 
     /// Ghi đúng N byte, tương ứng với `Reader::read_bytes<N>`.
     pub fn write_bytes<const N: usize>(&mut self, data: &[u8; N]) {
+        self.0.extend_from_slice(data);
+    }
+    pub fn write_slice(&mut self, data: &[u8]) {
         self.0.extend_from_slice(data);
     }
 

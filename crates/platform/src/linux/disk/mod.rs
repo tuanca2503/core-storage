@@ -1,4 +1,3 @@
-pub mod enumerate;
 mod mount;
 mod entry;
 

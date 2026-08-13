@@ -1,15 +1,14 @@
-mod cli;
+mod command;
 mod commands;
 mod registry;
-
-use cli::parser;
-use cli::result::CommandResult;
-use registry::{HELP_TEXT, execute};
+use command::{Command, Context, Result};
+use registry::{HELP_TEXT, execute, is_global};
+use std::collections::HashMap;
 
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
 
-    let ctx = match parser::parse(&argv) {
+    let ctx = match parse(&argv) {
         Some(ctx) => ctx,
         None => {
             eprintln!("Usage: corestorage <command> [args] [options]");
@@ -26,18 +25,10 @@ fn main() {
     render(result, global);
 }
 
-fn render(result: CommandResult, global: Vec<String>) {
+fn render(result: Result, global: Vec<String>) {
     match result {
-        CommandResult::Text(s) => println!("{s}"),
-        CommandResult::List(mut items) => {
-            if global.iter().any(|s| s == "sort") {
-                items.sort();
-            }
-            for item in items {
-                println!("{item}");
-            }
-        }
-        CommandResult::Table(mut rows) => {
+        Result::Text(s) => println!("{s}"),
+        Result::Table(mut rows) => {
             if global.iter().any(|s| s == "sort") {
                 rows.sort_by(|a, b| a.first().cmp(&b.first()));
             }
@@ -55,9 +46,43 @@ fn render(result: CommandResult, global: Vec<String>) {
                 println!();
             }
         }
-        CommandResult::Error(e) => {
+        Result::Error(e) => {
             eprintln!("{e}");
             std::process::exit(1);
         }
     }
+}
+
+fn parse(argv: &[String]) -> Option<Context> {
+    let mut iter = argv.iter();
+    let command = iter.next()?.clone();
+    let mut params = Vec::new();
+    let mut options = HashMap::new();
+    let mut global_options = Vec::new();
+
+    for token in iter {
+        if let Some(rest) = token.strip_prefix("--") {
+            if is_global(rest) {
+                global_options.push(rest.to_string());
+                continue;
+            }
+
+            match rest.split_once('=') {
+                Some((name, value)) => {
+                    options.insert(name.to_string(), Some(value.to_string()));
+                }
+                None => {
+                    options.insert(rest.to_string(), None);
+                }
+            }
+        } else {
+            params.push(token.clone());
+        }
+    }
+    Some(Context {
+        command,
+        params,
+        options,
+        global_options,
+    })
 }

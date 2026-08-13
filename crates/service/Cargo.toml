@@ -7,4 +7,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+platform = { path = "../platform" }
+model = { path = "../model" }
+
+uuid = {workspace=true}
 chrono = {workspace=true}

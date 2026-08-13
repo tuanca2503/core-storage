@@ -7,7 +7,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-rusqlite = {version = "0.40.1", features = ["bundled"]}
-uuid = { version = "1.23.5", features = ["v7"] }
+uuid = {workspace=true}
 crc32c = "0.6"
 

@@ -1,5 +1,5 @@
 [package]
-name = "core"
+name = "daemon"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -8,8 +8,8 @@ repository.workspace = true
 
 [dependencies]
 model = { path = "../model" }
+database = { path = "../database" }
 
-platform = { path = "../platform" }
-rusqlite = {version = "0.40.1", features = ["bundled"]}
-sysinfo = "0.39.6"
 chrono = { workspace = true }
+tokio = { workspace = true }
+

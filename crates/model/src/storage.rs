@@ -1,11 +1,12 @@
-use std::time::{SystemTime, UNIX_EPOCH};
 use crate::segment::SEGMENT_SIZE;
+use std::time::{SystemTime, UNIX_EPOCH};
 pub mod storage_bin;
+
 pub const HEADER_SIZE: u64 = 4 * 1024; //4096
 pub const VERSION: u32 = 1;
 pub const MAGIC: [u8; 12] = *b"CORE STORAGE";
 
-#[derive(Debug, Clone, Copy,PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum StorageState {
     Uninitialized = 0, // Un init cant run
     Initialized = 1,   // Is init but un active
@@ -59,7 +60,7 @@ pub struct Storage {
     pub segment_count: u64,           // 8
     pub active_segment_index: u64,    // 8
     pub mirror_offset: u64,           // 8
-    pub created_at_ms: u64,           // 8
+    pub created_at: u64,              // 8
 }
 
 impl Storage {
@@ -73,10 +74,10 @@ impl Storage {
         }
 
         let mirror_offset = capacity_bytes - HEADER_SIZE;
-        let created_at_ms = SystemTime::now()
+        let created_at: u64 = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("[Storage]> System clock is before UNIX_EPOCH")
-            .as_millis() as u64;
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let available_bytes = mirror_offset - HEADER_SIZE;
         let segment_count = (available_bytes + SEGMENT_SIZE - 1) / SEGMENT_SIZE;
         let last_segment_size_bytes = available_bytes - (segment_count - 1) * SEGMENT_SIZE;
@@ -92,7 +93,7 @@ impl Storage {
             segment_count,
             active_segment_index: 0,
             mirror_offset,
-            created_at_ms,
+            created_at,
         }
     }
 }
@@ -110,7 +111,7 @@ impl Default for Storage {
             segment_count: 0,
             active_segment_index: 0,
             mirror_offset: 0,
-            created_at_ms: 0,
+            created_at: 0,
         }
     }
 }

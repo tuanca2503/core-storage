@@ -1,11 +1,4 @@
-use crate::{
-    cli::{
-        command::{Command, FlagDef},
-        context::CommandContext,
-        result::CommandResult,
-    },
-    commands::*,
-};
+use crate::{Command, Context, Result, commands::*};
 
 pub const GLOBAL_FLAGS: [&str; 4] = ["pretty", "verbose", "color", "sort"];
 
@@ -16,28 +9,17 @@ pub fn is_global(name: &str) -> bool {
 pub const REGISTRY_COMMANDS: [Command; 2] = [
     Command {
         name: "list",
-        min_arguments: 1,
-        max_arguments: 1,
-        flags: &[FlagDef {
-            name: "disk",
-            description: "Show details",
-        },
-        FlagDef {
-            name: "segment",
-            description: "Show segemnt",
-        }
-        ],
-        handler: list::list,
+        min_arguments: 0,
+        max_arguments: 0,
+        flags: &[("disk", "Show details"), ("segment", "Show segemnt")],
+        handler: list::handle,
     },
     Command {
         name: "format",
         min_arguments: 1,
         max_arguments: 2,
-        flags: &[FlagDef {
-            name: "forced",
-            description: "Ignore warning",
-        }],
-        handler: format::format,
+        flags: &[("forced", "Ignore warning")],
+        handler: format::handle,
     },
 ];
 
@@ -61,14 +43,14 @@ GLOBAL FLAGS (ap dung moi command):
     --sort               Sort result
 ";
 
-pub fn execute(ctx: CommandContext) -> CommandResult {
+pub fn execute(ctx: Context) -> Result {
     let command = match REGISTRY_COMMANDS.iter().find(|c| c.name == ctx.command) {
         Some(c) => c,
-        None => return CommandResult::Error(format!("Unknown command '{}'", ctx.command)),
+        None => return Result::Error(format!("Unknown command '{}'", ctx.command)),
     };
 
     if ctx.prm_count() < command.min_arguments || ctx.prm_count() > command.max_arguments {
-        return CommandResult::Error(usage(command));
+        return Result::Error(usage(command));
     }
     (command.handler)(ctx)
 }
@@ -79,5 +61,15 @@ pub fn usage(command: &Command) -> String {
     } else {
         " <arg>".to_string()
     };
-    format!("Usage: 'corestorage {}{}'", command.name, args)
+
+    let mut usage = format!("Usage: corestorage {}{}", command.name, args);
+
+    if !command.flags.is_empty() {
+        usage.push_str("\n\nFlags:");
+        for (name, description) in command.flags {
+            usage.push_str(&format!("\n  --{:<12} {}", name, description));
+        }
+    }
+
+    usage
 }

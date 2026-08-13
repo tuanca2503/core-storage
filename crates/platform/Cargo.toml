@@ -7,13 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-model = { path = "../model" }
-service = { path = "../service" }
-
-
-uuid = { version = "1.23.5", features = ["v7"] }
-
-
+cfg-if = "1.0"
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.62", features = [
     "Win32_Foundation",
@@ -25,6 +19,5 @@ windows = { version = "0.62", features = [
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-crc32c = "0.6"
 hex = "0.4"
 libc = "0.2"

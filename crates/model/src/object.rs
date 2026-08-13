@@ -1,3 +1,7 @@
+use uuid::Uuid;
+
+use crate::CHUNK_SIZE;
+
 pub mod object_db;
 #[derive(Debug, Clone)]
 pub enum ObjectState {
@@ -36,10 +40,41 @@ impl std::fmt::Display for ObjectState {
 
 pub struct Object {
     pub object_id: i64,
-    pub external_id: Option<String>,   // id do tầng app đặt, nullable
-    pub total_size: i64,
-    pub chunk_count: i64,
-    pub status: ObjectState,
-    pub created_at: i64,               // unix timestamp
-    pub updated_at: i64,               // unix timestamp
+    pub external_id: Uuid, // id do tầng app đặt
+
+    pub original_filename: String,
+    pub extension: Option<String>,
+    pub mime_type: Option<String>,
+
+    pub checksum: [u8; 32],
+    pub total_size: u64,
+    pub chunk_count: u64,
+
+    pub state: ObjectState,
+    pub created_at: i64, // unix timestamp
+    pub updated_at: i64, // unix timestamp
+}
+
+impl Object {
+    pub fn new(
+        original_filename: String,
+        extension: Option<String>,
+        mime_type: Option<String>,
+        checksum: [u8; 32],
+        total_size: u64,
+    ) -> Self {
+        Self {
+            object_id: 0,
+            external_id: Uuid::now_v7(),
+            original_filename,
+            extension,
+            mime_type,
+            checksum,
+            total_size,
+            chunk_count: (total_size + CHUNK_SIZE - 1) / CHUNK_SIZE,
+            state: ObjectState::Pending,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
 }

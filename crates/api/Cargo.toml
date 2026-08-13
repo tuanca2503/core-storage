@@ -7,4 +7,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-core = { path = "../core" }
+model = { path = "../model" }
+
+tokio = { workspace=true }
+uuid = { workspace=true }
+async-trait = "0.1"
+
+
