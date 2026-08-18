@@ -1,14 +1,12 @@
 //server.rs
 use std::io;
 use std::sync::Arc;
-use std::time::Duration;
 
-use tokio::io::BufReader;
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex, Semaphore, mpsc, watch};
 
-use crate::tcp::TransferEvents;
-use crate::tcp::{BufferPool, Message, MessageType};
+use crate::tcp::{BufferPool, Message, MessageType, TransferEvents};
 
 pub struct Server {
     pub tx: watch::Sender<bool>,
@@ -19,7 +17,6 @@ impl Server {
     pub fn start(
         port: u64,
         max_concurrent_clients: usize,
-        read_timeout: Duration,
         events: Arc<dyn TransferEvents>,
         buffer_pool: Arc<BufferPool>,
     ) -> Self {
@@ -40,7 +37,7 @@ impl Server {
 
                         tokio::spawn(async move {
                             let _permit = permit;
-                            if let Err(e) = Server::handle(socket,  handler, buffer_pool, read_timeout).await {
+                            if let Err(e) = Server::handle(socket,  handler, buffer_pool).await {
                                 println!("Lỗi xử lý client {addr}: {e}");
                             }
                         });
@@ -66,23 +63,100 @@ impl Server {
         socket: TcpStream,
         events: Arc<dyn TransferEvents>,
         buffer_pool: Arc<BufferPool>,
-        read_timeout: Duration,
     ) -> io::Result<()> {
         let (reader, mut writer) = socket.into_split();
         let mut reader = BufReader::new(reader);
-        // ---- INFO ----
         let msg = Message::from_reader(&mut reader).await?;
         match msg.message_type {
-            MessageType::Object => {
-                println!(">>>{:?}", msg.message_type);
+            MessageType::New => {
                 let obj = msg.as_object()?;
-                events.on_info(obj).await?;
-                Message::info("okay").send(&mut writer).await?;
+                let total_size = obj.total_size;
+                let uuid = obj.external_id.to_string();
+                events.on_new(obj).await?;
+                Message::stream(&uuid).send(&mut writer).await?;
+                // TODO start new obj here
+                // loop here
+                let mut chunk_index: u64 = 0;
+                let mut filled: usize = 0;
+                let mut bytes_received: u64 = 0;
+
+                let mut buf = match buffer_pool.acquire_timeout().await {
+                    Some(buf) => buf,
+                    None => {
+                        Message::error("not enough PooledBuffer")
+                            .send(&mut writer)
+                            .await?;
+                        return Ok(());
+                    }
+                };
+
+                while bytes_received < total_size {
+                    let remaining_total = (total_size - bytes_received) as usize;
+                    let capacity = buf.len() - filled;
+                    let read_len = remaining_total.min(capacity);
+
+                    Message::read_data_chunk(&mut reader, &mut buf[filled..filled + read_len])
+                        .await?;
+
+                    filled += read_len;
+                    bytes_received += read_len as u64;
+
+                    if bytes_received == total_size {
+                        // Chunk cuối: gửi thẳng buf hiện tại, KHÔNG cần lấy buffer mới nữa vì loop sẽ kết thúc.
+                        // Phần buf sau vị trí `filled` có thể là rác từ lần dùng trước của pool,
+                        // nhưng không sao vì on_chunk luôn nhận kèm `filled` để biết đọc tới đâu là đủ.
+                        // events
+                        //     .on_chunk(chunk_index, buf, filled)
+                        //     .await?;
+                        break;
+                    }
+
+                    if filled == buf.len() {
+                        let next = match buffer_pool.acquire_timeout().await {
+                            Some(buf) => buf,
+                            None => {
+                                Message::error("not enough PooledBuffer")
+                                    .send(&mut writer)
+                                    .await?;
+                                return Ok(());
+                            }
+                        };
+                        let full = std::mem::replace(&mut buf, next);
+
+                        // events
+                        //     .on_chunk(chunk_index, full, filled)
+                        //     .await?;
+
+                        chunk_index += 1;
+                        filled = 0;
+                    }
+                }
+
+                events.on_complete(&uuid).await?;
+            }
+            MessageType::Resume => {
+                let uuid = msg.get_string()?;
+                let resume_size = events.on_resume(&uuid).await?;
+                Message::stream(resume_size.to_string())
+                    .send(&mut writer)
+                    .await?;
+                // TODO resume obj here
+                // loop here
+
+                events.on_complete(&uuid).await?;
+            }
+            MessageType::Close => {
+                // TODO: when user proactively close the connection or call cancle
+                let uuid = msg.get_string()?;
+                events.on_close(&uuid).await?;
             }
             _ => {
                 Message::error("unsupport").send(&mut writer).await?;
+                return Ok(());
             }
         }
+
+        Message::success().send(&mut writer).await?;
 
         // let (filename, total_size) = Server::read_info_payload(&mut reader, payload_len).await?;
 

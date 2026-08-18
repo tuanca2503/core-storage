@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use uuid::Uuid;
 
 use crate::CHUNK_SIZE;
@@ -49,10 +51,11 @@ pub struct Object {
     pub checksum: [u8; 32],
     pub total_size: u64,
     pub chunk_count: u64,
+    pub chunk_size: u64,
 
     pub state: ObjectState,
-    pub created_at: i64, // unix timestamp
-    pub updated_at: i64, // unix timestamp
+    pub created_at: u64, // unix timestamp
+    pub updated_at: u64, // unix timestamp
 }
 
 impl Object {
@@ -63,6 +66,10 @@ impl Object {
         checksum: [u8; 32],
         total_size: u64,
     ) -> Self {
+        let created_at: u64 = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         Self {
             object_id: 0,
             external_id: Uuid::now_v7(),
@@ -72,8 +79,9 @@ impl Object {
             checksum,
             total_size,
             chunk_count: (total_size + CHUNK_SIZE - 1) / CHUNK_SIZE,
+            chunk_size: CHUNK_SIZE,
             state: ObjectState::Pending,
-            created_at: 0,
+            created_at,
             updated_at: 0,
         }
     }

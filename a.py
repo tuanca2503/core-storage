@@ -22,6 +22,13 @@ def main() -> None:
         send_info(sock)
         greeting = sock.recv(1024)
         print(f"Nhan tu server: {greeting!r}")
+        if greeting[0] == 0x17:
+            print("OK: byte đầu là 0x17")
+        else:
+            print("Không phải 0x17")
+        
+        greeting = sock.recv(1024)
+        print(f"Nhan tu server: {greeting!r}")
         # time.sleep(5)
         # sock.sendall(b"HELLO\n")
         # greeting = sock.recv(1024)
@@ -45,26 +52,27 @@ def send_info(sock: socket.socket):
     total_size = len(file_data)
 
     # DATA
+    
     data = (
-        filename_data
-        + extension_data
-        + mime_data
-        + checksum
-        + struct.pack("<Q", total_size)
-    )
+            filename_data
+            + extension_data
+            + mime_data
+            + checksum
+            + struct.pack("<Q", total_size)
+        )
+    
+    # data = "01a013a6-2837-7d60-938b-ad4734651149".encode("utf-8")
 
     # HEADER
     # 1 byte  : message type
     # 4 bytes : data length (big endian)
     header = struct.pack(
         ">BI",
-        0x03,
+        0x01,
         len(data),
     )
-    print("send")
 
     sock.sendall(header + data)
-    print("send success")
     
 
 if __name__ == "__main__":

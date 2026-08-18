@@ -83,8 +83,8 @@ pub fn from_device(device: &mut File) -> Result<Storage> {
 
     if s.state == StorageState::Corrupt {
         eprintln!("[Storage]> Primary header corrupt, try recovered from mirror");
-        device.seek(SeekFrom::End(-(HEADER_SIZE as i64)));
-        device.read_exact(&mut buf);
+        device.seek(SeekFrom::End(-(HEADER_SIZE as i64)))?;
+        device.read_exact(&mut buf)?;
         s = from_bytes(&buf)?;
     }
     Ok(s)
