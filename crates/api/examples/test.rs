@@ -12,9 +12,14 @@ impl TransferEvents for TestHandler {
         println!("start streammode");
         Ok(())
     }
-    async fn on_resume(&self, uuid: &str) -> std::io::Result<u64> {
+    async fn on_resume(&self, uuid: &str) -> std::io::Result<(u64, u64, u64)> {
         println!("[{:?}] 12", uuid);
-        Ok(12)
+        //TODO: 
+        let chunk_index=0; // get form queue
+        let bytes_received=0; // chunk_index * obj.chunk_size
+        let total_size =0; // obj.total_size
+
+        Ok((chunk_index, bytes_received, total_size))
     }
 
     async fn on_complete(&self, uuid: &str) -> std::io::Result<()>{
@@ -32,7 +37,7 @@ impl TransferEvents for TestHandler {
 //cargo run -p core --example test
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let buffer_pool = Arc::new(BufferPool::new(128, model::CHUNK_SIZE as usize));
+    let buffer_pool = Arc::new(BufferPool::new(128, 8 as usize));
     let handler: Arc<dyn TransferEvents> = Arc::new(TestHandler);
 
     let server = Server::start(7878, 120,  handler, buffer_pool);

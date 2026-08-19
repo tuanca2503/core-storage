@@ -1,8 +1,9 @@
 use std::time::Duration;
-
 use model::{Object, Reader, Writer};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufReader, Error, ErrorKind, Result}, net::tcp::{OwnedReadHalf, OwnedWriteHalf}, time::timeout,
+    io::{AsyncReadExt, AsyncWriteExt, BufReader, Error, ErrorKind, Result},
+    net::tcp::{OwnedReadHalf, OwnedWriteHalf},
+    time::timeout,
 };
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -34,19 +35,20 @@ impl TryFrom<u8> for MessageType {
         }
     }
 }
-//       STRUCT MSG
-// [1    ,4         ,N   ]
-// [Type ,Data len  ,Data]
+// ______STRUCT MSG_______
+// [1    |4         |N   ]
+// [Type |Data len  |Data]
+
 pub struct Message {
     pub message_type: MessageType,
     pub data: Vec<u8>,
 }
 
 impl Message {
-    pub fn stream(message: impl Into<String>) -> Self {
+    pub fn success() -> Self {
         Self {
-            message_type: MessageType::Stream,
-            data: message.into().into_bytes(),
+            message_type: MessageType::Success,
+            data: vec![],
         }
     }
     pub fn info(message: impl Into<String>) -> Self {
@@ -55,18 +57,19 @@ impl Message {
             data: message.into().into_bytes(),
         }
     }
-    pub fn success() -> Self {
-        Self {
-            message_type: MessageType::Success,
-            data: vec![],
-        }
-    }
     pub fn error(message: impl Into<String>) -> Self {
         Self {
             message_type: MessageType::Error,
             data: message.into().into_bytes(),
         }
     }
+    pub fn stream(message: impl Into<String>) -> Self {
+        Self {
+            message_type: MessageType::Stream,
+            data: message.into().into_bytes(),
+        }
+    }
+    // to
     pub fn as_object(&self) -> Result<Object> {
         let mut r = Reader::new(&self.data);
         let original_filename = r.read_string()?;
@@ -86,23 +89,35 @@ impl Message {
             r.read_u64()?,
         ))
     }
-
-    pub fn get_string(&self) -> Result<String> {
+    pub fn as_string(&self) -> Result<String> {
         String::from_utf8(self.data.clone())
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
-
+    // from
     pub async fn from_reader(reader: &mut BufReader<OwnedReadHalf>) -> Result<Self> {
         let mut header = [0u8; 5]; // header 1 | len 4(~4GB)
-        reader.read_exact(&mut header).await?;
+        timeout(READ_TIMEOUT, reader.read_exact(&mut header))
+            .await
+            .map_err(|_| Error::new(ErrorKind::TimedOut, "timeout when read data"))??;
 
         let message_type = MessageType::try_from(header[0])?;
         let len = u32::from_be_bytes([header[1], header[2], header[3], header[4]]) as usize;
 
         let mut data = vec![0u8; len];
-        reader.read_exact(&mut data).await?;
+        timeout(READ_TIMEOUT, reader.read_exact(&mut data))
+            .await
+            .map_err(|_| Error::new(ErrorKind::TimedOut, "timeout when read data"))??;
 
         Ok(Message { message_type, data })
+    }
+    pub async fn buffer_from_reader(
+        reader: &mut BufReader<OwnedReadHalf>,
+        buf: &mut [u8],
+    ) -> Result<()> {
+        timeout(READ_TIMEOUT, reader.read_exact(buf)) // read_exact tự loop bên trong rồi
+            .await
+            .map_err(|_| Error::new(ErrorKind::TimedOut, "timeout when read data"))??;
+        Ok(())
     }
     pub async fn send(&self, writer: &mut OwnedWriteHalf) -> Result<()> {
         let data_len = self.data.len();
@@ -111,23 +126,6 @@ impl Message {
         w.write_u32(data_len as u32);
         w.write_slice(&self.data);
         writer.write_all(&w.into_bytes()).await?;
-        Ok(())
-    }
-
-    //
-
-    pub async fn read_data_chunk(
-        reader: &mut BufReader<OwnedReadHalf>,
-        buf: &mut [u8],
-    ) -> Result<()> {
-        timeout(READ_TIMEOUT, reader.read_exact(buf)) // read_exact tự loop bên trong rồi
-            .await
-            .map_err(|_| {
-                Error::new(
-                    ErrorKind::TimedOut,
-                    "không nhận được dữ liệu trong thời gian chờ",
-                )
-            })??;
         Ok(())
     }
 }
