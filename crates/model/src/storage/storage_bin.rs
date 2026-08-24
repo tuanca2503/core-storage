@@ -9,25 +9,23 @@ use crate::{
 };
 
 pub fn to_bytes(storage: &Storage) -> Vec<u8> {
-    let mut w = Writer::with_capacity(HEADER_SIZE as usize);
-    w.write_bytes(&MAGIC);
-    w.write_bytes(&storage.uuid);
-    w.write_u32(storage.version);
-    w.write_u32(storage.state as u32);
-    w.write_u32(storage.logical_sector_size);
-    w.write_u32(storage.physical_sector_size);
-
-    w.write_u64(storage.capacity_bytes);
-    w.write_u64(storage.last_segment_size_bytes);
-    w.write_u64(storage.segment_count);
-    w.write_u64(storage.active_segment_index);
-    w.write_u64(storage.mirror_offset);
-    w.write_u64(storage.created_at);
+    let w = Writer::with_capacity(HEADER_SIZE as usize)
+        .write_bytes(&MAGIC)
+        .write_bytes(&storage.uuid)
+        .write_u32(storage.version)
+        .write_u32(storage.state as u32)
+        .write_u32(storage.logical_sector_size)
+        .write_u32(storage.physical_sector_size)
+        .write_u64(storage.capacity_bytes)
+        .write_u64(storage.last_segment_size_bytes)
+        .write_u64(storage.segment_count)
+        .write_u64(storage.active_segment_index)
+        .write_u64(storage.mirror_offset)
+        .write_u64(storage.created_at);
     let crc = crc32c::crc32c(w.as_slice());
-    w.write_u32(crc);
-    // padding
-    w.seek(HEADER_SIZE as usize);
-    w.into_bytes()
+    w.write_u32(crc)
+        .seek(HEADER_SIZE as usize) // padding
+        .into_bytes()
 }
 
 pub fn from_bytes(buf: &[u8]) -> Result<Storage> {

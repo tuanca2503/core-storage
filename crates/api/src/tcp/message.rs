@@ -1,5 +1,5 @@
-use std::time::Duration;
 use model::{Object, Reader, Writer};
+use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufReader, Error, ErrorKind, Result},
     net::tcp::{OwnedReadHalf, OwnedWriteHalf},
@@ -28,17 +28,19 @@ impl TryFrom<u8> for MessageType {
             0x00 => Ok(MessageType::Close),
             0x01 => Ok(MessageType::New),
             0x02 => Ok(MessageType::Resume),
+            0x17 => Ok(MessageType::Stream),
             other => Err(Error::new(
                 ErrorKind::InvalidData,
-                format!("Unknown message type: {other:#x}"),
+                format!("Unknown type in TryFrom: {other:#x}"),
             )),
         }
     }
 }
+
 // ______STRUCT MSG_______
 // [1    |4         |N   ]
 // [Type |Data len  |Data]
-
+#[derive(Debug)]
 pub struct Message {
     pub message_type: MessageType,
     pub data: Vec<u8>,
@@ -69,10 +71,22 @@ impl Message {
             data: message.into().into_bytes(),
         }
     }
+    //
+    pub fn new(filename: String, extension: Option<String>, mime_type: Option<String>, total_size: u64) -> Self {
+        Self {
+            message_type: MessageType::New,
+            data: Writer::new()
+                .write_string(Some(filename))
+                .write_string(extension)
+                .write_string(mime_type)
+                .write_u64(total_size)
+                .into_bytes(),
+        }
+    }
     // to
     pub fn as_object(&self) -> Result<Object> {
         let mut r = Reader::new(&self.data);
-        let original_filename = r.read_string()?;
+        let filename = r.read_string()?;
         let extension = {
             let s = r.read_string()?;
             if s.is_empty() { None } else { Some(s) }
@@ -81,13 +95,7 @@ impl Message {
             let s = r.read_string()?;
             if s.is_empty() { None } else { Some(s) }
         };
-        Ok(Object::new(
-            original_filename,
-            extension,
-            mime_type,
-            r.read_array::<32>()?,
-            r.read_u64()?,
-        ))
+        Ok(Object::new(filename, extension, mime_type, r.read_u64()?))
     }
     pub fn as_string(&self) -> Result<String> {
         String::from_utf8(self.data.clone())
@@ -96,12 +104,13 @@ impl Message {
     // from
     pub async fn from_reader(reader: &mut BufReader<OwnedReadHalf>) -> Result<Self> {
         let mut header = [0u8; 5]; // header 1 | len 4(~4GB)
+        
         timeout(READ_TIMEOUT, reader.read_exact(&mut header))
             .await
             .map_err(|_| Error::new(ErrorKind::TimedOut, "timeout when read data"))??;
 
         let message_type = MessageType::try_from(header[0])?;
-        let len = u32::from_be_bytes([header[1], header[2], header[3], header[4]]) as usize;
+        let len = u32::from_le_bytes([header[1], header[2], header[3], header[4]]) as usize;
 
         let mut data = vec![0u8; len];
         timeout(READ_TIMEOUT, reader.read_exact(&mut data))
@@ -121,11 +130,15 @@ impl Message {
     }
     pub async fn send(&self, writer: &mut OwnedWriteHalf) -> Result<()> {
         let data_len = self.data.len();
-        let mut w = Writer::with_capacity(5 + data_len);
-        w.write_u8(self.message_type as u8);
-        w.write_u32(data_len as u32);
-        w.write_slice(&self.data);
-        writer.write_all(&w.into_bytes()).await?;
+        writer
+            .write_all(
+                &Writer::with_capacity(5 + data_len)
+                    .write_u8(self.message_type as u8)
+                    .write_u32(data_len as u32)
+                    .write_slice(&self.data)
+                    .into_bytes(),
+            )
+            .await?;
         Ok(())
     }
 }

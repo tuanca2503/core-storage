@@ -9,12 +9,11 @@ use crate::{
 };
 
 pub fn to_bytes(segment: &Segment) -> Vec<u8> {
-    let mut w = Writer::with_capacity(HEADER_SIZE as usize);
-    w.write_u64(segment.chunk_count);
-    w.write_u64(segment.chunk_capacity);
-    // padding
-    w.seek(HEADER_SIZE as usize);
-    w.into_bytes()
+    Writer::with_capacity(HEADER_SIZE as usize)
+        .write_u64(segment.chunk_count)
+        .write_u64(segment.chunk_capacity)
+        .seek(HEADER_SIZE as usize) // padding
+        .into_bytes()
 }
 
 pub fn from_bytes(buf: &[u8]) -> Result<Segment> {

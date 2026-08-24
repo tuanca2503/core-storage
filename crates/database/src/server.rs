@@ -26,7 +26,9 @@ impl Server {
     pub fn start() -> Self {
         let (tx, mut rx) = mpsc::channel::<WriteJob>(MAX_QUEUE);
         let handle = tokio::task::spawn_blocking(move || {
-            let mut conn = Connection::open(paths::get_database_path()).expect("open db failed");
+            let mut conn =
+                Connection::open(paths::app_file("metadata.db").expect("open directory failed"))
+                    .expect("open db failed");
             Self::apply_pragmas(&conn).expect("Failed apply pragma");
 
             while let Some(job) = rx.blocking_recv() {
@@ -53,7 +55,7 @@ impl Server {
             }
         });
         //
-        let manager = SqliteConnectionManager::file(paths::get_database_path())
+        let manager = SqliteConnectionManager::file(paths::app_file("metadata.db").expect("open directory failed"))
             .with_flags(OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI)
             .with_init(|conn| {
                 conn.pragma_update(None, "busy_timeout", 5000)?;

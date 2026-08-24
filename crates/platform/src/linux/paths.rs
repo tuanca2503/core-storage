@@ -1,10 +1,15 @@
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
+use std::io::Result;
 
 const APP_DIR: &str = "/var/lib/core-storage";
 
-pub fn get_database_path() -> PathBuf {
-    std::fs::create_dir_all(APP_DIR)
-        .unwrap_or_else(|e| panic!("Can not create dir {}: {}", APP_DIR, e));
+pub fn app_directory() -> Result<PathBuf> {
+    let dir = PathBuf::from(APP_DIR);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
 
-    Path::new(APP_DIR).join("metadata.db")
+pub fn app_file(filename: &str) -> Result<PathBuf> {
+    let dir = app_directory()?;
+    Ok(dir.join(filename))
 }

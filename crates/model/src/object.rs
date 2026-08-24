@@ -44,11 +44,10 @@ pub struct Object {
     pub object_id: i64,
     pub external_id: Uuid, // id do tầng app đặt
 
-    pub original_filename: String,
+    pub filename: String,
     pub extension: Option<String>,
     pub mime_type: Option<String>,
 
-    pub checksum: [u8; 32],
     pub total_size: u64,
     pub chunk_count: u64,
     pub chunk_size: u64,
@@ -60,10 +59,9 @@ pub struct Object {
 
 impl Object {
     pub fn new(
-        original_filename: String,
+        filename: String,
         extension: Option<String>,
         mime_type: Option<String>,
-        checksum: [u8; 32],
         total_size: u64,
     ) -> Self {
         let created_at: u64 = SystemTime::now()
@@ -73,10 +71,9 @@ impl Object {
         Self {
             object_id: 0,
             external_id: Uuid::now_v7(),
-            original_filename,
+            filename,
             extension,
             mime_type,
-            checksum,
             total_size,
             chunk_count: (total_size + CHUNK_SIZE - 1) / CHUNK_SIZE,
             chunk_size: CHUNK_SIZE,

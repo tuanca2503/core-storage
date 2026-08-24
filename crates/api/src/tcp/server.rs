@@ -1,43 +1,46 @@
 //server.rs
-use std::io;
 use std::sync::Arc;
 
-use tokio::io::BufReader;
+use tokio::io::{BufReader,Result};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
 
 use crate::tcp::{BufferPool, Message, MessageType, TransferEvents};
 
 pub struct Server {
-    pub tx: watch::Sender<bool>,
-    pub handle: tokio::task::JoinHandle<io::Result<()>>,
+    pub shutdown_tx: watch::Sender<bool>,
+    pub handle: tokio::task::JoinHandle<Result<()>>,
 }
 
 impl Server {
     pub fn start(
         port: u64,
-        max_concurrent_clients: usize,
-        events: Arc<dyn TransferEvents>,
-        buffer_pool: Arc<BufferPool>,
+        max_concurrent_clients: u64,
+        chunk_size: u64,
+        queue_size: u64,
+        events_trait: impl TransferEvents + 'static,
     ) -> Self {
-        let (tx, _) = watch::channel(false);
-        let mut shutdown_rx = tx.subscribe();
-
+        let (shutdown_tx,mut shutdown_rx) = watch::channel(false);
+        // spawn handle
         let handle = tokio::spawn(async move {
             let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-            let semaphore = Arc::new(Semaphore::new(max_concurrent_clients));
-
+            let semaphore = Arc::new(Semaphore::new(max_concurrent_clients as usize));
+            let buffer_pool = Arc::new(BufferPool::new(
+                (max_concurrent_clients + queue_size + 20) as usize,
+                chunk_size as usize,
+            )); //client + queue + margin
+            let events: Arc<dyn TransferEvents> = Arc::new(events_trait);
             loop {
                 tokio::select! {
                     accept_result = listener.accept() => {
                         let Ok((socket, addr)) = accept_result else { continue };
                         let _ = socket.set_nodelay(true);
-                        let permit = Arc::clone(&semaphore).acquire_owned().await.expect("semaphore không bao giờ bị đóng");
-                        let (handler, buffer_pool) = (events.clone(), buffer_pool.clone());
-
+                        let permit = Arc::clone(&semaphore).acquire_owned().await.expect("semaphore was closed unexpectedly — this should never happen");
+                        let events = Arc::clone(&events);
+                        let buffer_pool = Arc::clone(&buffer_pool);
                         tokio::spawn(async move {
                             let _permit = permit;
-                            if let Err(e) = Server::handle(socket,  handler, buffer_pool).await {
+                            if let Err(e) = Server::handle(socket,  events, buffer_pool).await {
                                 println!("[DEBUG|ERROR] Lỗi xử lý client {addr}: {e}");
                             }
                         });
@@ -47,11 +50,11 @@ impl Server {
             }
             Ok(())
         });
-        Self { tx, handle }
+        Self { shutdown_tx, handle }
     }
 
     pub async fn shutdown(self) {
-        drop(self.tx);
+        drop(self.shutdown_tx);
         let _ = self.handle.await;
     }
 
@@ -59,7 +62,7 @@ impl Server {
         socket: TcpStream,
         events: Arc<dyn TransferEvents>,
         buffer_pool: Arc<BufferPool>,
-    ) -> io::Result<()> {
+    ) -> Result<()> {
         let (reader, mut writer) = socket.into_split();
         let mut reader = BufReader::new(reader);
         let msg = Message::from_reader(&mut reader).await?;
@@ -70,8 +73,7 @@ impl Server {
                 let total_size = obj.total_size;
                 let uuid = obj.external_id.to_string();
                 events.on_new(obj).await?;
-                Message::stream(&uuid).send(&mut writer).await?;
-                let mut chunk_index: u64 = 0;
+                let mut sequence: u64 = 0;
                 let mut filled: usize = 0;
                 let mut bytes_received: u64 = 0;
                 let mut buf = match buffer_pool.acquire_timeout().await {
@@ -83,7 +85,7 @@ impl Server {
                         return Ok(());
                     }
                 };
-
+                Message::stream(&uuid).send(&mut writer).await?;
                 while bytes_received < total_size {
                     let remaining_total = (total_size - bytes_received) as usize;
                     let capacity = buf.len() - filled;
@@ -102,7 +104,7 @@ impl Server {
                         //     .await?;
                         println!(
                             "DEBUG> send on_chunk: chunk_index={}, filled={}, data={:?}",
-                            chunk_index,
+                            sequence,
                             filled,
                             &buf[..filled]
                         );
@@ -110,7 +112,16 @@ impl Server {
                     }
                     if filled == buf.len() {
                         // filled full accquire new buffer
-                        let next = match buffer_pool.acquire_timeout().await {
+                        // events
+                        //     .on_chunk(chunk_index, full, filled)
+                        //     .await?;
+                        println!(
+                            "DEBUG> send on_chunk: chunk_index={}, filled={}, data={:?}",
+                            sequence,
+                            filled,
+                            &buf[..filled]
+                        );
+                        buf = match buffer_pool.acquire_timeout().await {
                             Some(buf) => buf,
                             None => {
                                 Message::error("not enough PooledBuffer")
@@ -119,17 +130,7 @@ impl Server {
                                 return Ok(());
                             }
                         };
-                        let full = std::mem::replace(&mut buf, next);
-                        println!(
-                            "DEBUG>(new buff) send on_chunk: chunk_index={}, filled={}, data={:?}",
-                            chunk_index,
-                            filled,
-                            &full[..filled]
-                        );
-                        // events
-                        //     .on_chunk(chunk_index, full, filled)
-                        //     .await?;
-                        chunk_index += 1;
+                        sequence += 1;
                         filled = 0;
                     }
                 }
@@ -139,9 +140,7 @@ impl Server {
                 let uuid = msg.as_string()?;
                 let (mut chunk_index, mut bytes_received, total_size) =
                     events.on_resume(&uuid).await?;
-                Message::stream(bytes_received.to_string())
-                    .send(&mut writer)
-                    .await?;
+
                 // TODO resume obj here
                 let mut filled: usize = 0;
                 let mut buf = match buffer_pool.acquire_timeout().await {
@@ -153,7 +152,9 @@ impl Server {
                         return Ok(());
                     }
                 };
-
+                Message::stream(bytes_received.to_string())
+                    .send(&mut writer)
+                    .await?;
                 while bytes_received < total_size {
                     let remaining_total = (total_size - bytes_received) as usize;
                     let capacity = buf.len() - filled;
@@ -180,7 +181,10 @@ impl Server {
                     }
                     if filled == buf.len() {
                         // filled full accquire new buffer
-                        let next = match buffer_pool.acquire_timeout().await {
+                        // events
+                        //     .on_chunk(chunk_index, full, filled)
+                        //     .await?;
+                        buf = match buffer_pool.acquire_timeout().await {
                             Some(buf) => buf,
                             None => {
                                 Message::error("not enough PooledBuffer")
@@ -189,16 +193,6 @@ impl Server {
                                 return Ok(());
                             }
                         };
-                        let full = std::mem::replace(&mut buf, next);
-                        println!(
-                            "DEBUG>(new buff) send on_chunk: chunk_index={}, filled={}, data={:?}",
-                            chunk_index,
-                            filled,
-                            &full[..filled]
-                        );
-                        // events
-                        //     .on_chunk(chunk_index, full, filled)
-                        //     .await?;
                         chunk_index += 1;
                         filled = 0;
                     }
@@ -218,5 +212,4 @@ impl Server {
         }
         Message::success().send(&mut writer).await
     }
-
 }

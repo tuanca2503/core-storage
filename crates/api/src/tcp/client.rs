@@ -1,70 +1,110 @@
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use std::path::Path;
+use tokio::fs::{self, File};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, Error, ErrorKind, Result};
 use tokio::net::TcpStream;
-use tokio::sync::watch;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
-#[tokio::main]
-async fn main() -> io::Result<()> {
-    let addr = std::env::var("SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+use crate::tcp::{Message, MessageType};
+use model::CHUNK_SIZE;
+use platform::paths;
 
-    let stream = TcpStream::connect(&addr).await?;
-    stream.set_nodelay(true)?;
-    println!("Đã kết nối tới {addr}");
-    println!("Gõ nội dung rồi Enter để gửi. Gõ 'quit' để thoát.\n");
-
-    let (reader, mut writer) = stream.into_split();
-
-    // Báo hiệu khi server đóng kết nối, để vòng lặp chính tự dừng
-    // thay vì gọi thẳng process::exit (không cho phần còn lại kịp dọn dẹp).
-    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-
-    tokio::spawn(async move {
-        let mut reader = BufReader::new(reader);
-        let mut line = String::new();
-
-        loop {
-            line.clear();
-            match reader.read_line(&mut line).await {
-                Ok(0) => {
-                    println!("\nServer đã đóng kết nối.");
-                    let _ = shutdown_tx.send(true);
-                    break;
-                }
-                Ok(_) => print!("{line}"),
-                Err(e) => {
-                    eprintln!("Lỗi đọc từ server: {e}");
-                    let _ = shutdown_tx.send(true);
-                    break;
-                }
-            }
-        }
+pub async fn new(file_path: &str, ip: &str, port: &str) -> Result<()> {
+    // Get file information
+    let metadata = fs::metadata(file_path).await?;
+    if !metadata.is_file() {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            format!("'{file_path}' it is not valid file"),
+        ));
+    }
+    let total_size = metadata.len();
+    let path = Path::new(file_path);
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "Tên file không hợp lệ (UTF-8)"))?
+        .to_string();
+    let extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_string());
+    let mime_type = extension.as_deref().map(|ext| {
+        mime_guess::from_ext(ext)
+            .first_or_octet_stream()
+            .to_string()
     });
-
-    let stdin = io::stdin();
-    let mut stdin_reader = BufReader::new(stdin);
-    let mut input = String::new();
-
-    loop {
-        input.clear();
-
-        tokio::select! {
-            result = stdin_reader.read_line(&mut input) => {
-                let bytes_read = result?;
-                if bytes_read == 0 {
-                    break; // Ctrl+D / EOF
+    // END
+    // Connect, send new object and handle
+    let (mut reader, mut writer) = get_connection(ip, port).await?;
+    Message::new(filename, extension, mime_type, total_size)
+        .send(&mut writer)
+        .await?;
+    let msg = Message::from_reader(&mut reader).await?;
+    match msg.message_type {
+        MessageType::Stream => {
+            let uuid = msg.as_string()?;
+            create_tmp(&uuid).await?;
+            // Start sending
+            let file = File::open(file_path).await?;
+            let mut file_reader = BufReader::new(file);
+            let mut buf = vec![0u8; CHUNK_SIZE as usize];
+            loop {
+                let n = file_reader.read(&mut buf).await?;
+                if n == 0 {
+                    break; // Len = 0 stop
                 }
-
-                writer.write_all(input.as_bytes()).await?;
-
-                if input.trim() == "quit" {
-                    break;
-                }
+                writer.write_all(&buf[..n]).await?; // Send correctly n byte reading not all buf
             }
+            // END
+            remove_tmp(&uuid).await?; // Remove temp file
+            println!("OK {}", uuid);
+            Ok(())
+        }
+        MessageType::Error => {
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("Server error: {}", msg.as_string()?),
+            ));
+        }
+        _ => {
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("Unvalid message '{}' from server", msg.message_type as u8),
+            ));
+        }
+    }
+    // END
+}
 
-            _ = shutdown_rx.changed() => {
-                break; // server đã đóng kết nối
-            }
+//
+async fn get_connection(
+    ip: &str,
+    port: &str,
+) -> Result<(BufReader<OwnedReadHalf>, OwnedWriteHalf)> {
+    let addr = format!("{}:{}", ip, port);
+    let stream = TcpStream::connect(&addr).await?; //127.0.0.1:7878
+    stream.set_nodelay(true)?;
+    let (reader, writer) = stream.into_split();
+    Ok((BufReader::new(reader), writer))
+}
+async fn create_tmp(uuid: &str) -> Result<()> {
+    let path = paths::app_file(&format!("{uuid}.tmp"))?;
+    fs::write(path, b"").await
+}
+async fn remove_tmp(uuid: &str) -> Result<()> {
+    let path = paths::app_file(&format!("{uuid}.tmp"))?;
+    fs::remove_file(path).await
+}
+async fn get_tmp() -> Result<Option<String>> {
+    let dir = paths::app_directory()?;
+    let mut entries = fs::read_dir(&dir).await?;
+
+    while let Some(entry) = entries.next_entry().await? {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("tmp") {
+            return Ok(path.file_stem().map(|s| s.to_string_lossy().into_owned()));
         }
     }
 
-    Ok(())
+    Ok(None)
 }
