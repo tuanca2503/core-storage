@@ -72,7 +72,12 @@ impl Message {
         }
     }
     //
-    pub fn new(filename: String, extension: Option<String>, mime_type: Option<String>, total_size: u64) -> Self {
+    pub fn new(
+        filename: String,
+        extension: Option<String>,
+        mime_type: Option<String>,
+        total_size: u64,
+    ) -> Self {
         Self {
             message_type: MessageType::New,
             data: Writer::new()
@@ -81,6 +86,12 @@ impl Message {
                 .write_string(mime_type)
                 .write_u64(total_size)
                 .into_bytes(),
+        }
+    }
+    pub fn resume(uuid: String) -> Self {
+        Self {
+            message_type: MessageType::New,
+            data: uuid.into_bytes(),
         }
     }
     // to
@@ -104,7 +115,7 @@ impl Message {
     // from
     pub async fn from_reader(reader: &mut BufReader<OwnedReadHalf>) -> Result<Self> {
         let mut header = [0u8; 5]; // header 1 | len 4(~4GB)
-        
+
         timeout(READ_TIMEOUT, reader.read_exact(&mut header))
             .await
             .map_err(|_| Error::new(ErrorKind::TimedOut, "timeout when read data"))??;

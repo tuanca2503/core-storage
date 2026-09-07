@@ -70,14 +70,15 @@ title Superblock — 4KB (offset tính theo byte)
 ---
 
 ## 3. Cấu trúc Segment
- 
-- Mỗi **segment = 64GiB**.
-- Trong segment gồm: **Header 4KiB** + vùng **Data** chứa các **chunk**, mỗi chunk **32MiB**.
-- Số chunk trong 1 segment (phần Data) = `(64GiB - 4KiB) / 32MiB` ≈ **2047 chunk** (còn dư một phần nhỏ **32MiB - 4KiB**, chấp nhận bỏ vì không đủ 1 chunk).
- 
+
+- Mỗi **segment = 64GiB** (là kích thước vùng **Data**, không tính header).
+- Mỗi segment có **Header 4KiB** đứng trước, sau đó là vùng **Data** chứa các **chunk**, mỗi chunk **32MiB**.
+- Số chunk trong 1 segment = `64GiB / 32MiB` = **2048 chunk**, chia hết, không dư.
+- Kích thước thực tế trên disk cho 1 khối (header + data) = `4KiB + 64GiB`.
+
 ```mermaid
 flowchart LR
-  H["Header<br/>4KiB"] --> C1["Chunk 1<br/>32MiB"] --> C2["Chunk 2<br/>32MiB"] --> Dots(["⋮"]) --> C2047["Chunk 2047<br/>32MiB"] --> Waste["Phần dư<br/>32MiB - 4KiB<br/>(chấp nhận bỏ)"]
+  H["Header<br/>4KiB"] --> C1["Chunk 1<br/>32MiB"] --> C2["Chunk 2<br/>32MiB"] --> Dots(["⋮"]) --> C2048["Chunk 2048<br/>32MiB"]
 ```
 
 ### 3.1 Segment Header (4KiB)

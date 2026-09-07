@@ -1,6 +1,6 @@
 use std::{
     fs,
-    io::{Error, Result},
+    io::{Error, ErrorKind, Result},
     path::{Path, PathBuf},
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
@@ -12,8 +12,8 @@ impl TempMount {
     pub fn mount(volume: &Path) -> Result<Self> {
         let id = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("System clock is before UNIX_EPOCH")
-            .as_millis();
+            .map_err(|e| Error::new(ErrorKind::Other, e))?
+            .as_secs();
         let mount_point = std::env::temp_dir().join(format!("core-storage-{id}"));
         fs::create_dir_all(&mount_point)?;
         let output = Command::new("mount")

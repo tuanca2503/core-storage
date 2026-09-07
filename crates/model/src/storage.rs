@@ -78,6 +78,7 @@ impl Storage {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
+        
         let available_bytes = mirror_offset - HEADER_SIZE;
         let segment_count = (available_bytes + SEGMENT_SIZE - 1) / SEGMENT_SIZE;
         let last_segment_size_bytes = available_bytes - (segment_count - 1) * SEGMENT_SIZE;

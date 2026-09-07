@@ -17,13 +17,20 @@ pub trait TransferEvents: Send + Sync {
         // TODO: có trả về không có raise lỗi
         todo!()
     }
-    async fn on_chunk(&self, chunk: Chunk) -> std::io::Result<()> {
+    async fn on_chunk(&self, chunk: Chunk, faster: bool) -> std::io::Result<()> {
+        /*
+        if faster {
+            //TODO: push to fast queue here
+        } else {
+            //TODO: normal queue
+        } */
+
         // TODO: when call check uuid and push chunk to process queue
         //self.tx.send((chunk_index, data, len)).await  // <- nếu channel ĐẦY, dòng này TỰ ĐỘNG CHỜ ở đây
         //.map_err(|e| e.to_string())?;
 
         // create new chunk > with {obj_id,sequence,checksum} other field set default
-        // and then when write task get from queue, he will insert to disk and get & fill other field 
+        // and then when write task get from queue, he will insert to disk and get & fill other field
         // write > {disk_uuid,chunk_index,segment_index} > complete field > push to insert sql queue
         todo!()
     }
@@ -37,7 +44,7 @@ pub trait TransferEvents: Send + Sync {
     }
     async fn on_complete(&self, uuid: &str) -> std::io::Result<()> {
         // TODO: push to completed queue
-        // when all done > mark is completed > to insert sql set state committed(1) > push all queue chunk to sql 
+        // when all done > mark is completed > to insert sql set state committed(1) > push all queue chunk to sql
         todo!()
     }
 }

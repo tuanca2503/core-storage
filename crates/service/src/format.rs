@@ -1,13 +1,11 @@
+use crate::{BaseError, BaseResult, ErrorCode};
 use std::io::{Seek, SeekFrom, Write};
-
 use chrono::DateTime;
 use model::{Segment, Storage, segment_bin, storage_bin};
 use platform::{
     disk::{DiskEntry, TempMount},
     erase::{wipe_signatures, zero_fill},
 };
-
-use crate::{BaseError, BaseResult, ErrorCode, };
 
 pub const KB: u64 = 1024;
 pub const MB: u64 = 1024 * KB;
@@ -30,15 +28,15 @@ pub fn format_size(bytes: u64) -> String {
 
 pub fn format_date(ms: u64) -> String {
     let default = "--/--/----".to_string();
-    if ms == 0 {
+    if ms <= 0 {
         return default;
     }
 
-    DateTime::from_timestamp_millis(ms as i64)
+    DateTime::from_timestamp_secs(ms as i64)
         .map(|dt| dt.format("%d/%m/%Y").to_string())
         .unwrap_or_else(|| default)
 }
-//
+
 fn allowed_format_disk(forced: bool, disk_entry: &DiskEntry) -> BaseResult<()> {
     let volume_paths = disk_entry.volume_paths()?;
     if volume_paths.len() > 0 {
@@ -116,6 +114,13 @@ pub fn format_disk(forced: bool, zero_mode: bool, name: String) -> BaseResult<()
         } else {
             Segment::default()
         };
+        // |4m  |4m |64g    |4m |64g    |4m |64g    |...
+        // |SB  |H1 |S1     |H2 |S2     |H3 |S3     |...
+        // segment_size * index + header
+        // 64 * 0 + 4 = 4   [seek write header]> behind super block
+        // 64 * 1 + 4 = 68  [seek write header]> behind super block + Segment 1
+        // 64 * 2 + 4 = 132 [seek write header]> behind super block + Segment 2
+
         device.seek(SeekFrom::Start(segment_bin::offset(index)))?;
         device.write_all(&segment_bin::to_bytes(&segment))?;
     }
@@ -125,6 +130,5 @@ pub fn format_disk(forced: bool, zero_mode: bool, name: String) -> BaseResult<()
 
     device.flush()?;
     device.sync_all()?;
-
     Ok(())
 }

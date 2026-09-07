@@ -1,10 +1,7 @@
-//server.rs
 use std::sync::Arc;
-
-use tokio::io::{BufReader,Result};
+use tokio::io::{BufReader, Result};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
-
 use crate::tcp::{BufferPool, Message, MessageType, TransferEvents};
 
 pub struct Server {
@@ -20,16 +17,15 @@ impl Server {
         queue_size: u64,
         events_trait: impl TransferEvents + 'static,
     ) -> Self {
-        let (shutdown_tx,mut shutdown_rx) = watch::channel(false);
-        // spawn handle
+        let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
         let handle = tokio::spawn(async move {
             let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
             let semaphore = Arc::new(Semaphore::new(max_concurrent_clients as usize));
+            let events: Arc<dyn TransferEvents> = Arc::new(events_trait);
             let buffer_pool = Arc::new(BufferPool::new(
                 (max_concurrent_clients + queue_size + 20) as usize,
                 chunk_size as usize,
-            )); //client + queue + margin
-            let events: Arc<dyn TransferEvents> = Arc::new(events_trait);
+            )); //client + queue + margin(20)
             loop {
                 tokio::select! {
                     accept_result = listener.accept() => {
@@ -50,7 +46,10 @@ impl Server {
             }
             Ok(())
         });
-        Self { shutdown_tx, handle }
+        Self {
+            shutdown_tx,
+            handle,
+        }
     }
 
     pub async fn shutdown(self) {
@@ -69,10 +68,13 @@ impl Server {
 
         match msg.message_type {
             MessageType::New => {
+                // Prepare data
                 let obj = msg.as_object()?;
                 let total_size = obj.total_size;
                 let uuid = obj.external_id.to_string();
-                events.on_new(obj).await?;
+                // TODO: trường hợp file nhỏ hơn 32 chunk(32x32Mib = 1gb) > đẩy vào fast queue(ssd)
+                let need_faster = total_size < 1_000_000_000;
+                events.on_new(obj).await?; // call event
                 let mut sequence: u64 = 0;
                 let mut filled: usize = 0;
                 let mut bytes_received: u64 = 0;
@@ -86,6 +88,8 @@ impl Server {
                     }
                 };
                 Message::stream(&uuid).send(&mut writer).await?;
+                // END
+                // Start receive chunks
                 while bytes_received < total_size {
                     let remaining_total = (total_size - bytes_received) as usize;
                     let capacity = buf.len() - filled;
@@ -94,7 +98,6 @@ impl Server {
                         .await?;
                     filled += read_len;
                     bytes_received += read_len as u64;
-                    //
                     if bytes_received == total_size {
                         // last chunk > send buf
                         // Phần buf sau vị trí `filled` có thể là rác từ lần dùng trước của pool,
@@ -134,7 +137,8 @@ impl Server {
                         filled = 0;
                     }
                 }
-                events.on_complete(&uuid).await?;
+                // END
+                events.on_complete(&uuid).await?; // call event
             }
             MessageType::Resume => {
                 let uuid = msg.as_string()?;

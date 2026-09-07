@@ -1,9 +1,9 @@
-use crate::{BaseError, BaseResult, ErrorCode};
+use crate::{
+    BaseError, BaseResult, ErrorCode,
+    format::{format_date, format_size},
+};
 use model::{segment_bin, storage_bin};
-
 use platform::disk::DiskEntry;
-
-use crate::format::{format_date, format_size};
 
 pub fn physical_disk_to_table() -> BaseResult<Vec<Vec<String>>> {
     let mut disks = Vec::new();

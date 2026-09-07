@@ -8,9 +8,9 @@ use crate::tcp::{Message, MessageType};
 use model::CHUNK_SIZE;
 use platform::paths;
 
-pub async fn new(file_path: &str, ip: &str, port: &str) -> Result<()> {
+pub async fn new(file_path: String, ip: String, port: String) -> Result<()> {
     // Get file information
-    let metadata = fs::metadata(file_path).await?;
+    let metadata = fs::metadata(&file_path).await?;
     if !metadata.is_file() {
         return Err(Error::new(
             ErrorKind::InvalidInput,
@@ -18,7 +18,7 @@ pub async fn new(file_path: &str, ip: &str, port: &str) -> Result<()> {
         ));
     }
     let total_size = metadata.len();
-    let path = Path::new(file_path);
+    let path = Path::new(&file_path);
     let filename = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -43,7 +43,7 @@ pub async fn new(file_path: &str, ip: &str, port: &str) -> Result<()> {
     match msg.message_type {
         MessageType::Stream => {
             let uuid = msg.as_string()?;
-            create_tmp(&uuid).await?;
+            create_tmp(&uuid, &file_path).await?;
             // Start sending
             let file = File::open(file_path).await?;
             let mut file_reader = BufReader::new(file);
@@ -76,10 +76,51 @@ pub async fn new(file_path: &str, ip: &str, port: &str) -> Result<()> {
     // END
 }
 
+pub async fn resume(file_path: String, uuid: String, ip: String, port: String) -> Result<()> {
+    // Get file information
+    let metadata = fs::metadata(&file_path).await?;
+    if !metadata.is_file() {
+        remove_tmp(&uuid).await?;
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            format!("'{file_path}' it is not valid file"),
+        ));
+    }
+    let total_size = metadata.len();
+    let path = Path::new(&file_path);
+    // END
+    // Connect, send resume object and handle
+    let (mut reader, mut writer) = get_connection(ip, port).await?;
+    Message::resume(uuid).send(&mut writer).await?;
+    let msg = Message::from_reader(&mut reader).await?;
+    //TODO: send server when receive null > remove tmp file
+    //      when has return check receive data same > continue
+    match msg.message_type {
+        
+        MessageType::Error => {
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("Server error: {}", msg.as_string()?),
+            ));
+        }
+        _ => {
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("Unvalid message '{}' from server", msg.message_type as u8),
+            ));
+        }
+    }
+}
+
+pub async fn close(){
+    //TODO: send uuid to remove
+    //      in there call when user dont want continue sending
+}
+
 //
 async fn get_connection(
-    ip: &str,
-    port: &str,
+    ip: String,
+    port: String,
 ) -> Result<(BufReader<OwnedReadHalf>, OwnedWriteHalf)> {
     let addr = format!("{}:{}", ip, port);
     let stream = TcpStream::connect(&addr).await?; //127.0.0.1:7878
@@ -87,24 +128,26 @@ async fn get_connection(
     let (reader, writer) = stream.into_split();
     Ok((BufReader::new(reader), writer))
 }
-async fn create_tmp(uuid: &str) -> Result<()> {
+async fn create_tmp(uuid: &str, file_path: &str) -> Result<()> {
     let path = paths::app_file(&format!("{uuid}.tmp"))?;
-    fs::write(path, b"").await
+    fs::write(path, file_path).await
 }
 async fn remove_tmp(uuid: &str) -> Result<()> {
     let path = paths::app_file(&format!("{uuid}.tmp"))?;
     fs::remove_file(path).await
 }
-async fn get_tmp() -> Result<Option<String>> {
+pub async fn get_tmp() -> Result<Option<(String, String)>> {
     let dir = paths::app_directory()?;
     let mut entries = fs::read_dir(&dir).await?;
-
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("tmp") {
-            return Ok(path.file_stem().map(|s| s.to_string_lossy().into_owned()));
+        if path.extension().and_then(|e| e.to_str()) == Some("tmp")
+            && let Some(filename) = path.file_stem()
+        {
+            let filename = filename.to_string_lossy().into_owned();
+            let content = std::fs::read_to_string(&path)?;
+            return Ok(Some((filename, content)));
         }
     }
-
     Ok(None)
 }

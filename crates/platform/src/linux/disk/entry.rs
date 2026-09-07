@@ -137,7 +137,6 @@ impl DiskEntry {
                 volumes.push(PathBuf::from("/dev").join(file_name.as_ref()));
             }
         }
-
         Ok(volumes)
     }
     //

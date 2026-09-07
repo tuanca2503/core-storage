@@ -1,4 +1,4 @@
-use api::tcp::{BufferPool, TransferEvents, server::Server};
+use api::tcp::{TransferEvents, server::Server};
 use async_trait::async_trait;
 use model::{Chunk, Object};
 
@@ -6,7 +6,7 @@ struct TestHandler;
 
 #[async_trait]
 impl TransferEvents for TestHandler {
-     async fn on_new(&self, object: Object) -> std::io::Result<()> {
+    async fn on_new(&self, object: Object) -> std::io::Result<()> {
         println!(
             "[on_new] uuid={} filename={:?} extension={:?} mime={:?} total_size={}",
             object.external_id,
@@ -23,9 +23,9 @@ impl TransferEvents for TestHandler {
         println!("[on_resume] uuid={uuid} -> client yêu cầu resume upload");
 
         // TODO thật: tra trong queue xem uuid đã tồn tại chưa, lấy chunk_index hiện có
-        let chunk_index: u64 = 0;   // giả lập: chưa có chunk nào
+        let chunk_index: u64 = 0; // giả lập: chưa có chunk nào
         let bytes_received: u64 = 0; // giả lập: chunk_index * chunk_size
-        let total_size: u64 = 0;     // giả lập: lấy từ object đã lưu theo uuid
+        let total_size: u64 = 0; // giả lập: lấy từ object đã lưu theo uuid
 
         println!(
             "[on_resume] uuid={uuid} -> tra được: chunk_index={chunk_index}, bytes_received={bytes_received}, total_size={total_size}"
@@ -33,7 +33,7 @@ impl TransferEvents for TestHandler {
 
         Ok((chunk_index, bytes_received, total_size))
     }
-    async fn on_chunk(&self, chunk: Chunk) -> std::io::Result<()> {
+    async fn on_chunk(&self, chunk: Chunk, faster: bool) -> std::io::Result<()> {
         // let preview_len = chunk.data.len().min(16);
         // let hex_preview: String = chunk.data[..preview_len]
         //     .iter()
