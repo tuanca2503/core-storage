@@ -1,8 +1,8 @@
+use crate::tcp::{BufferPool, Message, MessageType, TransferEvents};
 use std::sync::Arc;
 use tokio::io::{BufReader, Result};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
-use crate::tcp::{BufferPool, Message, MessageType, TransferEvents};
 
 pub struct Server {
     pub shutdown_tx: watch::Sender<bool>,
@@ -11,10 +11,10 @@ pub struct Server {
 
 impl Server {
     pub fn start(
-        port: u64,
-        max_concurrent_clients: u64,
+        port: u16,
+        max_concurrent_clients: u16,
         chunk_size: u64,
-        queue_size: u64,
+        queue_size: u16,
         events_trait: impl TransferEvents + 'static,
     ) -> Self {
         let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
@@ -52,7 +52,7 @@ impl Server {
         }
     }
 
-    pub async fn shutdown(self) {
+    pub async fn stop(self) {
         drop(self.shutdown_tx);
         let _ = self.handle.await;
     }

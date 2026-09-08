@@ -1,8 +1,70 @@
-use api::tcp::{TransferEvents, Server};
+use api::tcp::Server as TcpServer;
+use api::tcp::TransferEvents;
 use async_trait::async_trait;
-use model::{Chunk, Object};
+use database::Server as DatabaseServer;
+use model::CHUNK_SIZE;
+use model::Chunk;
+use model::Object;
+use service::BaseResult;
+use tokio::signal::unix::SignalKind;
+use tokio::signal::unix::signal;
+use tokio::sync::watch;
+
+use crate::{ChunkQueue, FastQueue, ObjectQueue};
+
+const CLIENT_SIZE: u16 = 10;
+const QUEUE_SIZE: u16 = 10 * 10; //100 x 32mib = ~3.12 GiB
+const PORT: u16 = 7878;
 
 struct TestHandler;
+pub struct App {
+    tcp: TcpServer,
+    db: DatabaseServer,
+    // http: HttpServer,
+    // ws: WsServer,
+    //
+    chunk_queue: ChunkQueue,
+    fast_queue: FastQueue,
+    pending_queue: ObjectQueue,
+    write_queue: ObjectQueue,
+    //
+    shutdown_tx: watch::Sender<bool>,
+}
+
+impl App {
+    pub fn new() -> Self {
+        let (shutdown_tx, _shutdown_rx) = watch::channel(false);
+        Self {
+            db: DatabaseServer::start(),
+            tcp: TcpServer::start(PORT, CLIENT_SIZE, CHUNK_SIZE, QUEUE_SIZE, TestHandler),
+            //
+            chunk_queue: ChunkQueue::new(QUEUE_SIZE as usize),
+            fast_queue: FastQueue::new(QUEUE_SIZE as usize),
+            pending_queue: ObjectQueue::new((CLIENT_SIZE * 2) as usize),
+            write_queue: ObjectQueue::new((CLIENT_SIZE * 2) as usize),
+            shutdown_tx,
+        }
+    }
+
+    pub async fn start(self) -> BaseResult<()> {
+        let mut sigterm = signal(SignalKind::terminate())?;
+        let mut sigint = signal(SignalKind::interrupt())?;
+        let mut shutdown_rx = self.shutdown_tx.subscribe();
+        tokio::select! {
+            _ = shutdown_rx.changed() => tracing::info!("Server shutdown"),
+            _ = sigterm.recv() => tracing::info!("Receive SIGTERM"),
+            _ = sigint.recv() => tracing::info!("Receive SIGINT (Ctrl+C)")
+        }
+        self.stop().await
+    }
+
+    pub async fn stop(self) -> BaseResult<()> {
+        drop(self.shutdown_tx);
+        tokio::join!(self.tcp.stop(), self.db.stop(),);
+        Ok(())
+    }
+}
+
 
 #[async_trait]
 impl TransferEvents for TestHandler {
@@ -67,18 +129,4 @@ impl TransferEvents for TestHandler {
         println!("[on_close] -> (giả lập) đã remove object khỏi pending queue");
         Ok(())
     }
-}
-
-//cargo run -p core --example test
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-    let server = Server::start(7878, 120, 600, 50, TestHandler);
-
-    println!("Server đang lắng nghe tại 0.0.0.0:7878");
-
-    tokio::signal::ctrl_c().await?;
-    println!("Nhận Ctrl+C, dừng nhận kết nối mới...");
-    server.stop().await;
-    println!("Server đã dừng.");
-    Ok(())
 }

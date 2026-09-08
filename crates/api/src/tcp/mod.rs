@@ -8,4 +8,6 @@ pub use message::{Message,MessageType};
 
 
 pub mod client;
-pub mod server;
+
+mod server;
+pub use server::Server;

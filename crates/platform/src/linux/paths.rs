@@ -9,7 +9,7 @@ pub fn app_directory() -> Result<PathBuf> {
     Ok(dir)
 }
 
-pub fn app_file(filename: &str) -> Result<PathBuf> {
+pub fn app_join(path: &str) -> Result<PathBuf> {
     let dir = app_directory()?;
-    Ok(dir.join(filename))
+    Ok(dir.join(path))
 }

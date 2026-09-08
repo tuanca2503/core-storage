@@ -3,7 +3,7 @@ use rusqlite::{Connection, OpenFlags, Result, Row, params_from_iter, types::Valu
 
 fn get_connection() -> Result<Connection> {
     let conn = Connection::open_with_flags(
-        &paths::app_file("metadata.db").expect("open directory failed"),
+        &paths::app_join("metadata.db").expect("open directory failed"),
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
     )?;
     conn.pragma_update(None, "busy_timeout", 5000)?;

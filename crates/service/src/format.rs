@@ -1,11 +1,11 @@
 use crate::{BaseError, BaseResult, ErrorCode};
-use std::io::{Seek, SeekFrom, Write};
 use chrono::DateTime;
 use model::{Segment, Storage, segment_bin, storage_bin};
 use platform::{
     disk::{DiskEntry, TempMount},
     erase::{wipe_signatures, zero_fill},
 };
+use std::io::{Seek, SeekFrom, Write};
 
 pub const KB: u64 = 1024;
 pub const MB: u64 = 1024 * KB;
@@ -38,7 +38,7 @@ pub fn format_date(ms: u64) -> String {
 }
 
 fn allowed_format_disk(forced: bool, disk_entry: &DiskEntry) -> BaseResult<()> {
-    let volume_paths = disk_entry.volume_paths()?;
+    let volume_paths = disk_entry.block_device_paths()?;
     if volume_paths.len() > 0 {
         for path in &volume_paths {
             match TempMount::mount(path) {
@@ -93,42 +93,54 @@ pub fn format_disk(forced: bool, zero_mode: bool, name: String) -> BaseResult<()
     let disk_entry = DiskEntry::verify(name)?;
     let logical_sector_size = disk_entry.logical_sector_size();
     let capacity_bytes = disk_entry.capacity_bytes(logical_sector_size);
-    allowed_format_disk(forced, &disk_entry)?;
-    let storage = Storage::new(
-        capacity_bytes,
-        disk_entry.physical_sector_size(logical_sector_size),
-        logical_sector_size,
-    );
-    let header_bytes = storage_bin::to_bytes(&storage);
-    let mut device = disk_entry.open_device(1)?;
-    if zero_mode {
-        zero_fill(&mut device, capacity_bytes)?;
+    //HDD FORMAT
+    if disk_entry.rotational() {
+        allowed_format_disk(forced, &disk_entry)?;
+        let storage = Storage::new(
+            capacity_bytes,
+            disk_entry.physical_sector_size(logical_sector_size),
+            logical_sector_size,
+        );
+        let header_bytes = storage_bin::to_bytes(&storage);
+        let mut device = disk_entry.open_device(1)?;
+        if zero_mode {
+            zero_fill(&mut device, capacity_bytes)?;
+        }
+        device.seek(SeekFrom::Start(0))?;
+        device.write_all(&header_bytes)?;
+        for index in 0..storage.segment_count {
+            let segment = if index == storage.segment_count - 1 {
+                Segment::new(storage.last_segment_size_bytes)
+            } else {
+                Segment::default()
+            };
+            // |4m  |4m |64g    |4m |64g    |4m |64g    |...
+            // |SB  |H1 |S1     |H2 |S2     |H3 |S3     |...
+            // segment_size * index + header
+            // 64 * 0 + 4 = 4   [seek write header]> behind super block
+            // 64 * 1 + 4 = 68  [seek write header]> behind super block + Segment 1
+            // 64 * 2 + 4 = 132 [seek write header]> behind super block + Segment 2
+
+            device.seek(SeekFrom::Start(segment_bin::offset(index)))?;
+            device.write_all(&segment_bin::to_bytes(&segment))?;
+        }
+        device.seek(SeekFrom::Start(storage.mirror_offset))?;
+        device.write_all(&header_bytes)?;
+        device.flush()?;
+        device.sync_all()?;
     }
-
-    device.seek(SeekFrom::Start(0))?;
-    device.write_all(&header_bytes)?;
-
-    for index in 0..storage.segment_count {
-        let segment = if index == storage.segment_count - 1 {
-            Segment::new(storage.last_segment_size_bytes)
+    //SSD FORMAT
+    else {
+        let mount_points = disk_entry.mount_points()?;
+        if mount_points.len() == 1 {
+            //
+            //
         } else {
-            Segment::default()
-        };
-        // |4m  |4m |64g    |4m |64g    |4m |64g    |...
-        // |SB  |H1 |S1     |H2 |S2     |H3 |S3     |...
-        // segment_size * index + header
-        // 64 * 0 + 4 = 4   [seek write header]> behind super block
-        // 64 * 1 + 4 = 68  [seek write header]> behind super block + Segment 1
-        // 64 * 2 + 4 = 132 [seek write header]> behind super block + Segment 2
-
-        device.seek(SeekFrom::Start(segment_bin::offset(index)))?;
-        device.write_all(&segment_bin::to_bytes(&segment))?;
+            return Err(BaseError::system_error(
+                format!("[{}] Invalid mount, need 1 mount point", disk_entry.name),
+                ErrorCode::InvalidInput,
+            ));
+        }
     }
-
-    device.seek(SeekFrom::Start(storage.mirror_offset))?;
-    device.write_all(&header_bytes)?;
-
-    device.flush()?;
-    device.sync_all()?;
     Ok(())
 }

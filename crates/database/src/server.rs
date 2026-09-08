@@ -27,7 +27,7 @@ impl Server {
         let (tx, mut rx) = mpsc::channel::<WriteJob>(MAX_QUEUE);
         let handle = tokio::task::spawn_blocking(move || {
             let mut conn =
-                Connection::open(paths::app_file("metadata.db").expect("open directory failed"))
+                Connection::open(paths::app_join("metadata.db").expect("open directory failed"))
                     .expect("open db failed");
             Self::apply_pragmas(&conn).expect("Failed apply pragma");
 
@@ -55,7 +55,7 @@ impl Server {
             }
         });
         //
-        let manager = SqliteConnectionManager::file(paths::app_file("metadata.db").expect("open directory failed"))
+        let manager = SqliteConnectionManager::file(paths::app_join("metadata.db").expect("open directory failed"))
             .with_flags(OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI)
             .with_init(|conn| {
                 conn.pragma_update(None, "busy_timeout", 5000)?;
@@ -72,7 +72,7 @@ impl Server {
     /// Shuts down the writer gracefully: dropping `tx` closes the channel so
     /// the blocking task can finish processing remaining jobs and exit, then
     /// awaits its completion.
-    pub async fn shutdown(self) {
+    pub async fn stop(self) {
         drop(self.tx);
         let _ = self.handle.await;
     }

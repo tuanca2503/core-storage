@@ -29,7 +29,7 @@ pub fn physical_disk_to_table() -> BaseResult<Vec<Vec<String>>> {
             disk_entry.sysfs_path.display().to_string(),
             disk_entry.device_path.display().to_string(),
             disk_entry
-                .volume_paths()?
+                .block_device_paths()?
                 .iter()
                 .map(|p| p.display().to_string())
                 .collect::<Vec<_>>()
@@ -65,7 +65,7 @@ pub fn storage_to_table(valid: bool) -> BaseResult<Vec<Vec<String>>> {
         "CREATE_AT".into(),
     ]);
     DiskEntry::for_each_disk(|disk_entry| {
-        if !valid || !disk_entry.has_volumes()? {
+        if !valid || !disk_entry.has_partitions()? {
             let storage = storage_bin::from_device(&mut disk_entry.open_device(0)?)?;
             disks.push(vec![
                 disk_entry.name.clone(),

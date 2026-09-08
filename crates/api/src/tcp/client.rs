@@ -129,11 +129,11 @@ async fn get_connection(
     Ok((BufReader::new(reader), writer))
 }
 async fn create_tmp(uuid: &str, file_path: &str) -> Result<()> {
-    let path = paths::app_file(&format!("{uuid}.tmp"))?;
+    let path = paths::app_join(&format!("{uuid}.tmp"))?;
     fs::write(path, file_path).await
 }
 async fn remove_tmp(uuid: &str) -> Result<()> {
-    let path = paths::app_file(&format!("{uuid}.tmp"))?;
+    let path = paths::app_join(&format!("{uuid}.tmp"))?;
     fs::remove_file(path).await
 }
 pub async fn get_tmp() -> Result<Option<(String, String)>> {

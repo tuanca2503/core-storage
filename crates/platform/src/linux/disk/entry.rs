@@ -28,6 +28,7 @@ impl DiskEntry {
         }
         Ok(s)
     }
+
     /// Opens the device.
     ///
     /// # Arguments
@@ -112,7 +113,7 @@ impl DiskEntry {
 
         Ok(())
     }
-    pub fn has_volumes(&self) -> Result<bool> {
+    pub fn has_partitions(&self) -> Result<bool> {
         for entry in fs::read_dir(&self.sysfs_path)? {
             let entry = entry?;
             if entry.file_type()?.is_dir()
@@ -123,8 +124,8 @@ impl DiskEntry {
         }
         Ok(false)
     }
-    pub fn volume_paths(&self) -> Result<Vec<PathBuf>> {
-        let mut volumes = Vec::new();
+    pub fn block_device_paths(&self) -> Result<Vec<PathBuf>> {
+        let mut result = Vec::new();
         for entry in fs::read_dir(&self.sysfs_path)? {
             let entry = entry?;
 
@@ -134,11 +135,52 @@ impl DiskEntry {
             let file_name = entry.file_name();
             let file_name = file_name.to_string_lossy();
             if file_name.starts_with(&self.name) {
-                volumes.push(PathBuf::from("/dev").join(file_name.as_ref()));
+                result.push(PathBuf::from("/dev").join(file_name.as_ref()));
             }
         }
-        Ok(volumes)
+        Ok(result)
     }
+    pub fn mount_points(&self) -> Result<Vec<PathBuf>> {
+        let mounts = fs::read_to_string("/proc/mounts")?;
+        let mut result = Vec::new();
+
+        for entry in fs::read_dir(&self.sysfs_path)? {
+            let entry = entry?;
+
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+
+            if !file_name.starts_with(&self.name) {
+                continue;
+            }
+
+            let device_path = PathBuf::from("/dev").join(file_name.as_ref());
+            let device_path_str = device_path.to_string_lossy();
+
+            let mount_point = mounts.lines().find_map(|line| {
+                let mut fields = line.split_whitespace();
+                let mounted_device = fields.next()?;
+                let mount_point = fields.next()?;
+
+                if mounted_device == device_path_str {
+                    Some(PathBuf::from(mount_point))
+                } else {
+                    None
+                }
+            });
+
+            if let Some(mount_point) = mount_point {
+                result.push(mount_point);
+            }
+        }
+
+        Ok(result)
+    }
+
     //
     fn read_sysfs<T>(&self, file_path: &str) -> Option<T>
     where
